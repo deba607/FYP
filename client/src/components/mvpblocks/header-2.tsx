@@ -173,13 +173,13 @@ export default function Header2() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <a
-                  href="/signup"
+                <Link
+                  href="/login"
                   className="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center space-x-2 rounded-lg px-5 py-2.5 text-sm font-medium shadow-sm transition-all duration-200"
                 >
                   <span>Sign In</span>
                   <ArrowRight className="h-4 w-4" />
-                </a>
+                </Link>
               </motion.div>
             </motion.div>
             <ModeToggle />    
@@ -242,13 +242,13 @@ export default function Header2() {
                   >
                     Sign In
                   </Link> */}
-                  <a
-                    href="/signup"
+                  <Link
+                    href="/login"
                     className="bg-foreground text-background hover:bg-foreground/90 block w-full rounded-lg py-3 text-center font-medium transition-all duration-200"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                     Sign In
-                  </a>
+                    Sign In
+                  </Link>
                 </motion.div>
               </div>
             </motion.div>

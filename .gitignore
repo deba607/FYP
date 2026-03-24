@@ -15,6 +15,11 @@ client/yarn-debug.log*
 client/yarn-error.log*
 client/pnpm-debug.log*
 
+# Chatbot SQLite runtime files
+chatbot-engine/*.db
+chatbot-engine/*.db-shm
+chatbot-engine/*.db-wal
+
 # OS/editor
 .DS_Store
 Thumbs.db

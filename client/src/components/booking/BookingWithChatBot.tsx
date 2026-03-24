@@ -221,7 +221,7 @@ export default function BookingWithChatBot() {
           </button>
         </div>
 
-        <div className="mb-3 h-[420px] overflow-auto rounded border p-3">
+        <div className="mb-3 h-105 overflow-auto rounded border p-3">
           {messages.map((m, i) => (
             <div key={i} className={`mb-2 max-w-[85%] ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
               <div className={`inline-block rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
