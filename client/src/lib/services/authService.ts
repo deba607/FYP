@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { UserModel } from '@/models/User';
+import { getFirebaseFirestore } from '@/lib/config/firebaseAdmin';
 import { ApiError } from '@/lib/utils/errors';
 
 type SignupInput = {
@@ -17,6 +16,17 @@ type LoginInput = {
   password: string;
 };
 
+type StoredUser = {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  dateOfBirth?: string;
+  role: 'user' | 'admin';
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function createToken(userId: string, email: string) {
   const secret = process.env.JWT_SECRET;
 
@@ -28,32 +38,44 @@ function createToken(userId: string, email: string) {
 }
 
 export async function signupUser(input: SignupInput) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const normalizedEmail = input.email.trim().toLowerCase();
 
-  const existingUser = await UserModel.findOne({ email: input.email }).lean();
+  const existingUserSnapshot = await firestore
+    .collection('users')
+    .where('email', '==', normalizedEmail)
+    .limit(1)
+    .get();
 
-  if (existingUser) {
+  if (!existingUserSnapshot.empty) {
     throw new ApiError('User already exists with this email', 400);
   }
 
   const hashedPassword = await bcrypt.hash(input.password, 10);
+  const userRef = firestore.collection('users').doc();
+  const now = new Date();
 
-  const user = await UserModel.create({
+  const user: StoredUser = {
     name: input.name,
-    email: input.email,
+    email: normalizedEmail,
     password: hashedPassword,
     phone: input.phone,
-    dateOfBirth: input.dateOfBirth
-  });
+    dateOfBirth: input.dateOfBirth,
+    role: 'user',
+    createdAt: now,
+    updatedAt: now
+  };
 
-  const token = createToken(user._id.toString(), user.email);
+  await userRef.set(user);
+
+  const token = createToken(userRef.id, user.email);
 
   return {
     success: true,
     message: 'User registered successfully',
     token,
     user: {
-      id: user._id,
+      id: userRef.id,
       name: user.name,
       email: user.email,
       phone: user.phone
@@ -62,13 +84,20 @@ export async function signupUser(input: SignupInput) {
 }
 
 export async function loginUser(input: LoginInput) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const userSnapshot = await firestore
+    .collection('users')
+    .where('email', '==', normalizedEmail)
+    .limit(1)
+    .get();
 
-  const user = await UserModel.findOne({ email: input.email });
-
-  if (!user) {
+  if (userSnapshot.empty) {
     throw new ApiError('Invalid email or password', 401);
   }
+
+  const userDoc = userSnapshot.docs[0]!;
+  const user = userDoc.data() as StoredUser;
 
   const isPasswordValid = await bcrypt.compare(input.password, user.password);
 
@@ -76,14 +105,14 @@ export async function loginUser(input: LoginInput) {
     throw new ApiError('Invalid email or password', 401);
   }
 
-  const token = createToken(user._id.toString(), user.email);
+  const token = createToken(userDoc.id, user.email);
 
   return {
     success: true,
     message: 'Login successful',
     token,
     user: {
-      id: user._id,
+      id: userDoc.id,
       name: user.name,
       email: user.email,
       phone: user.phone,

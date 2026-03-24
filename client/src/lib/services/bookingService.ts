@@ -1,6 +1,4 @@
-import { connectToDatabase } from '@/lib/db/mongoose';
 import { getFirebaseFirestore } from '@/lib/config/firebaseAdmin';
-import { BookingModel } from '@/models/Booking';
 import { ApiError } from '@/lib/utils/errors';
 
 const TICKET_PRICES = {
@@ -11,6 +9,7 @@ const TICKET_PRICES = {
 } as const;
 
 type VisitorType = keyof typeof TICKET_PRICES;
+type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
 
 export type CreateBookingInput = {
   name: string;
@@ -27,28 +26,54 @@ function generateBookingId() {
   return `BM${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
 
-async function syncToFirestore(payload: Record<string, unknown>) {
-  try {
-    const firestore = getFirebaseFirestore();
-    await firestore.collection('bookings').doc(String(payload.bookingId)).set({
-      ...payload,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-  } catch {
-    // Keep MongoDB as source of truth when Firestore is unavailable.
+function toDateString(value: unknown) {
+  if (value && typeof value === 'object' && 'toDate' in (value as Record<string, unknown>)) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
   }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return new Date().toISOString();
+}
+
+function toBookingResponse(id: string, data: Record<string, unknown>) {
+  return {
+    _id: id,
+    bookingId: String(data.bookingId || id),
+    userId: data.userId ? String(data.userId) : null,
+    name: String(data.name || ''),
+    email: String(data.email || ''),
+    phone: String(data.phone || ''),
+    visitDate: String(data.visitDate || ''),
+    timeSlot: String(data.timeSlot || ''),
+    numberOfTickets: Number(data.numberOfTickets || 0),
+    visitorType: String(data.visitorType || 'Adult'),
+    totalAmount: Number(data.totalAmount || 0),
+    status: String(data.status || 'confirmed') as BookingStatus,
+    createdAt: toDateString(data.createdAt),
+    updatedAt: toDateString(data.updatedAt)
+  };
 }
 
 export async function createBooking(input: CreateBookingInput) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
 
   const pricePerTicket = TICKET_PRICES[input.visitorType] || 0;
   const totalAmount = pricePerTicket * input.numberOfTickets;
 
   const bookingId = generateBookingId();
+  const now = new Date();
+  const bookingDoc = firestore.collection('bookings').doc();
 
-  const booking = await BookingModel.create({
+  const payload = {
+    bookingId,
+    userId: input.userId || null,
     name: input.name,
     email: input.email,
     phone: input.phone,
@@ -57,23 +82,13 @@ export async function createBooking(input: CreateBookingInput) {
     numberOfTickets: input.numberOfTickets,
     visitorType: input.visitorType,
     totalAmount,
-    bookingId,
-    userId: input.userId || null,
-    status: 'confirmed'
-  });
+    status: 'confirmed' as BookingStatus,
+    createdAt: now,
+    updatedAt: now
+  };
 
-  await syncToFirestore({
-    bookingId,
-    userId: input.userId || null,
-    userEmail: input.email,
-    userName: input.name,
-    visitDate: input.visitDate,
-    timeSlot: input.timeSlot,
-    numberOfTickets: input.numberOfTickets,
-    visitorType: input.visitorType,
-    totalAmount,
-    status: 'confirmed'
-  });
+  await bookingDoc.set(payload);
+  const booking = toBookingResponse(bookingDoc.id, payload);
 
   return {
     success: true,
@@ -83,9 +98,12 @@ export async function createBooking(input: CreateBookingInput) {
 }
 
 export async function getAllBookings() {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const snapshot = await firestore.collection('bookings').get();
 
-  const bookings = await BookingModel.find().sort({ createdAt: -1 }).lean();
+  const bookings = snapshot.docs
+    .map((doc) => toBookingResponse(doc.id, doc.data()))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return {
     success: true,
@@ -95,13 +113,14 @@ export async function getAllBookings() {
 }
 
 export async function getBookingById(id: string) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const doc = await firestore.collection('bookings').doc(id).get();
 
-  const booking = await BookingModel.findById(id).lean();
-
-  if (!booking) {
+  if (!doc.exists) {
     throw new ApiError('Booking not found', 404);
   }
+
+  const booking = toBookingResponse(doc.id, doc.data() as Record<string, unknown>);
 
   return {
     success: true,
@@ -110,13 +129,19 @@ export async function getBookingById(id: string) {
 }
 
 export async function getBookingByBookingId(bookingId: string) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const snapshot = await firestore
+    .collection('bookings')
+    .where('bookingId', '==', bookingId)
+    .limit(1)
+    .get();
 
-  const booking = await BookingModel.findOne({ bookingId }).lean();
-
-  if (!booking) {
+  if (snapshot.empty) {
     throw new ApiError('Booking not found', 404);
   }
+
+  const doc = snapshot.docs[0]!;
+  const booking = toBookingResponse(doc.id, doc.data());
 
   return {
     success: true,
@@ -125,9 +150,12 @@ export async function getBookingByBookingId(bookingId: string) {
 }
 
 export async function getBookingsForUser(userId: string) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const snapshot = await firestore.collection('bookings').where('userId', '==', userId).get();
 
-  const bookings = await BookingModel.find({ userId }).sort({ createdAt: -1 }).lean();
+  const bookings = snapshot.docs
+    .map((doc) => toBookingResponse(doc.id, doc.data()))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return {
     success: true,
@@ -137,13 +165,21 @@ export async function getBookingsForUser(userId: string) {
 }
 
 export async function updateBookingStatus(id: string, status: 'pending' | 'confirmed' | 'cancelled') {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const docRef = firestore.collection('bookings').doc(id);
+  const doc = await docRef.get();
 
-  const booking = await BookingModel.findByIdAndUpdate(id, { status }, { new: true }).lean();
-
-  if (!booking) {
+  if (!doc.exists) {
     throw new ApiError('Booking not found', 404);
   }
+
+  await docRef.update({
+    status,
+    updatedAt: new Date()
+  });
+
+  const updatedDoc = await docRef.get();
+  const booking = toBookingResponse(updatedDoc.id, updatedDoc.data() as Record<string, unknown>);
 
   return {
     success: true,
@@ -153,13 +189,15 @@ export async function updateBookingStatus(id: string, status: 'pending' | 'confi
 }
 
 export async function deleteBooking(id: string) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const docRef = firestore.collection('bookings').doc(id);
+  const doc = await docRef.get();
 
-  const booking = await BookingModel.findByIdAndDelete(id).lean();
-
-  if (!booking) {
+  if (!doc.exists) {
     throw new ApiError('Booking not found', 404);
   }
+
+  await docRef.delete();
 
   return {
     success: true,
@@ -168,13 +206,16 @@ export async function deleteBooking(id: string) {
 }
 
 export async function checkAvailability(input: { visitDate: string; timeSlot: string }) {
-  await connectToDatabase();
+  const firestore = getFirebaseFirestore();
+  const snapshot = await firestore
+    .collection('bookings')
+    .where('timeSlot', '==', input.timeSlot)
+    .where('status', '==', 'confirmed')
+    .get();
 
-  const bookings = await BookingModel.find({
-    visitDate: new Date(input.visitDate),
-    timeSlot: input.timeSlot,
-    status: 'confirmed'
-  }).lean();
+  const bookings = snapshot.docs
+    .map((doc) => toBookingResponse(doc.id, doc.data()))
+    .filter((booking) => booking.visitDate === input.visitDate);
 
   const totalTickets = bookings.reduce((sum, booking) => sum + Number(booking.numberOfTickets), 0);
   const maxCapacity = 100;
