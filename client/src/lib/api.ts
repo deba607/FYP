@@ -108,3 +108,80 @@ export async function signup(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+export async function signupWithGoogle(idToken: string) {
+  return apiFetch<{
+    success: boolean;
+    message: string;
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string;
+      photoURL?: string;
+      profileCompleted: boolean;
+      role: 'user' | 'admin';
+    };
+  }>(`${API_BASE_URL}/auth/google`, {
+    method: 'POST',
+    body: JSON.stringify({ idToken })
+  });
+}
+
+export async function completeProfile(
+  payload: {
+    name?: string;
+    phone: string;
+    dateOfBirth?: string;
+    address?: string;
+    photoURL?: string;
+    password?: string;
+  },
+  firebaseIdToken: string
+) {
+  return apiFetch<{
+    success: boolean;
+    message: string;
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string;
+      dateOfBirth?: string;
+      address?: string;
+      photoURL?: string;
+      profileCompleted: boolean;
+      role: 'user' | 'admin';
+    };
+  }>(`${API_BASE_URL}/auth/profile`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${firebaseIdToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function uploadProfileImage(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/uploads`, {
+    method: 'POST',
+    body: formData,
+    cache: 'no-store'
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const errorData = data as ApiErrorShape;
+    throw new Error(errorData.message || errorData.error || 'Image upload failed');
+  }
+
+  return data as {
+    success: boolean;
+    imageUrl: string;
+    publicId: string;
+    message: string;
+  };
+}

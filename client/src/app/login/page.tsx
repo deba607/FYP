@@ -2,12 +2,17 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
-import { login } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { signInWithPopup } from 'firebase/auth';
+import { login, signupWithGoogle } from '@/lib/api';
+import { getFirebaseClientAuth, getGoogleProvider } from '@/lib/config/firebaseClient';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -23,12 +28,55 @@ export default function LoginPage() {
 
     try {
       setLoading(true);
-      await login(email.trim(), password);
+      const result = await login(email.trim(), password) as {
+        token?: string;
+        user?: Record<string, unknown>;
+      };
+
+      if (typeof window !== 'undefined') {
+        if (result.token) {
+          localStorage.setItem('museum_auth_token', result.token);
+        }
+        if (result.user) {
+          localStorage.setItem('museum_auth_user', JSON.stringify(result.user));
+        }
+      }
+
       setSuccess('Login successful.');
+      router.push('/booking');
     } catch (err) {
       setError((err as Error).message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onGoogleSignin = async () => {
+    setError('');
+    setSuccess('');
+
+    try {
+      setGoogleLoading(true);
+      const auth = getFirebaseClientAuth();
+      const provider = getGoogleProvider();
+      const result = await signInWithPopup(auth, provider);
+      const idToken = await result.user.getIdToken();
+      const apiResult = await signupWithGoogle(idToken);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('museum_auth_user', JSON.stringify(apiResult.user));
+      }
+
+      if (apiResult.user.profileCompleted) {
+        router.push('/booking');
+        return;
+      }
+
+      router.push('/profile');
+    } catch (err) {
+      setError((err as Error).message || 'Google sign in failed. Please try again.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -40,6 +88,17 @@ export default function LoginPage() {
 
         {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {success && <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{success}</div>}
+
+        <button
+          type="button"
+          onClick={onGoogleSignin}
+          disabled={googleLoading || loading}
+          className="mb-4 w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-slate-900"
+        >
+          {googleLoading ? 'Connecting Google...' : 'Continue with Google'}
+        </button>
+
+        <div className="mb-4 text-center text-xs text-muted-foreground">or sign in with email</div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
