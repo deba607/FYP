@@ -1,4 +1,4 @@
-import BookingWithChatBot from '@/components/booking/BookingWithChatBot';
+import BookingWithChatBot from '../../../components/booking/BookingWithChatBot';
 
 export default function BookingChatPage() {
   return <BookingWithChatBot />;

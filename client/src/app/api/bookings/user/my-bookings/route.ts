@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { requireFirebaseUser } from '@/lib/middleware/auth';
-import { getBookingsForUser } from '@/lib/services/bookingService';
-import { ApiError, toErrorMessage } from '@/lib/utils/errors';
-import { jsonError, jsonSuccess } from '@/lib/utils/apiResponse';
+import { requireFirebaseUser } from '../../../../../lib/middleware/auth';
+import { getBookingsForUser } from '../../../../../lib/services/bookingService';
+import { ApiError, toErrorMessage } from '../../../../../lib/utils/errors';
+import { jsonError, jsonSuccess } from '../../../../../lib/utils/apiResponse';
 
 export const runtime = 'nodejs';
 

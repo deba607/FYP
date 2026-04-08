@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getFirebaseAuth } from '@/lib/config/firebaseAdmin';
-import { ApiError } from '@/lib/utils/errors';
+import { getFirebaseAuth } from '../config/firebaseAdmin';
+import { ApiError } from '../utils/errors';
 
 export type AuthenticatedUser = {
   uid: string;

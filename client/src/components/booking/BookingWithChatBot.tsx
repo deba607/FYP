@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, RotateCcw } from 'lucide-react';
-import { createBooking, resetChatSession, sendChatMessage } from '@/lib/api';
+import { createBooking, resetChatSession, sendChatMessage } from '../../lib/api';
 
 type ChatMessage = {
   from: 'user' | 'bot';

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { jsonError, jsonSuccess } from '@/lib/utils/apiResponse';
+import { jsonError, jsonSuccess } from '../../../lib/utils/apiResponse';
 import crypto from 'node:crypto';
 
 export const runtime = 'nodejs';

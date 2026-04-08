@@ -1,8 +1,8 @@
-import Faq2 from '@/components/mvpblocks/faq-2';
-import InteractiveTooltip from '@/components/mvpblocks/interactive-tooltip';
-import TextRevealLetters from '@/components/mvpblocks/text-reveal-1';
-import { Skiper54 } from '@/components/ui/skiper-ui/skiper54';
-import BookingBlock from '@/components/booking/BookingBlock';
+import Faq2 from '../components/mvpblocks/faq-2';
+import InteractiveTooltip from '../components/mvpblocks/interactive-tooltip';
+import TextRevealLetters from '../components/mvpblocks/text-reveal-1';
+import { Skiper54 } from '../components/ui/skiper-ui/skiper54';
+import BookingBlock from '../components/booking/BookingBlock';
 
 export default function HomePage() {
   return (

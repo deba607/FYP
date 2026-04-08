@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 import Image from 'next/image';
-import { completeProfile, uploadProfileImage } from '@/lib/api';
-import { getFirebaseClientAuth } from '@/lib/config/firebaseClient';
+import { completeProfile, uploadProfileImage } from '../../lib/api';
+import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 
 type StoredUser = {
   id?: string;
@@ -87,6 +88,19 @@ export default function ProfilePage() {
       const result = await uploadProfileImage(file);
       setPhotoURL(result.imageUrl);
       setPhotoChanged(true);
+      // Update localStorage so other UI (navbar) can reflect the new avatar immediately
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('museum_auth_user');
+          const stored = raw ? JSON.parse(raw) : {};
+          stored.photoURL = result.imageUrl;
+          localStorage.setItem('museum_auth_user', JSON.stringify(stored));
+          // notify other components in same tab
+          window.dispatchEvent(new Event('user_profile_updated'));
+        } catch {
+          // ignore localStorage errors
+        }
+      }
       setSuccess('Profile image uploaded successfully. Save profile to persist changes.');
     } catch (err) {
       setError((err as Error).message || 'Image upload failed.');
@@ -99,6 +113,17 @@ export default function ProfilePage() {
   const onRemoveImage = () => {
     setPhotoURL('');
     setPhotoChanged(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('museum_auth_user');
+        const stored = raw ? JSON.parse(raw) : {};
+        stored.photoURL = '';
+        localStorage.setItem('museum_auth_user', JSON.stringify(stored));
+        window.dispatchEvent(new Event('user_profile_updated'));
+      } catch {
+        // ignore
+      }
+    }
     setSuccess('Profile image removed. Save profile to persist changes.');
   };
 

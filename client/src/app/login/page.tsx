@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signInWithPopup } from 'firebase/auth';
-import { login, signupWithGoogle } from '@/lib/api';
-import { getFirebaseClientAuth, getGoogleProvider } from '@/lib/config/firebaseClient';
+import { login, signupWithGoogle } from '../../lib/api';
+import { getFirebaseClientAuth, getGoogleProvider } from '../../lib/config/firebaseClient';
 
 export default function LoginPage() {
   const router = useRouter();

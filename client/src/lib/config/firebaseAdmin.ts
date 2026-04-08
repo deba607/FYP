@@ -44,10 +44,9 @@ export function getFirebaseFirestore() {
     return firestoreInstance;
   }
 
-  const databaseId = process.env.FIREBASE_DATABASE_ID?.trim();
-  firestoreInstance = databaseId
-    ? getFirestore(getFirebaseAdminApp(), databaseId)
-    : getFirestore(getFirebaseAdminApp());
+  // Firestore `getFirestore()` does not accept a second `databaseId` argument
+  // in the current firebase-admin types, so always initialize with the app.
+  firestoreInstance = getFirestore(getFirebaseAdminApp());
 
   return firestoreInstance;
 }

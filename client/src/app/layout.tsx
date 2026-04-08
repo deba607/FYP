@@ -1,6 +1,6 @@
 import './globals.css';
-import Header2 from '@/components/mvpblocks/header-2';
-import Footer4Col from '@/components/mvpblocks/footer-4col';
+import Header2 from '../components/mvpblocks/header-2';
+import Footer4Col from '../components/mvpblocks/footer-4col';
 import { Providers } from './providers';
 
 export const metadata = {

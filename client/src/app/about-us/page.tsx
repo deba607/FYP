@@ -1,4 +1,4 @@
-import Team9 from '@/components/mvpblocks/team-9';
+import Team9 from '../../components/mvpblocks/team-9';
 
 export default function AboutUsPage() {
   return (

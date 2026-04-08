@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getFirebaseFirestore } from '@/lib/config/firebaseAdmin';
-import { getFirebaseAuth } from '@/lib/config/firebaseAdmin';
-import { ApiError } from '@/lib/utils/errors';
+import { getFirebaseFirestore } from '../config/firebaseAdmin';
+import { getFirebaseAuth } from '../config/firebaseAdmin';
+import { ApiError } from '../utils/errors';
 
 type SignupInput = {
   name: string;
@@ -376,7 +376,7 @@ export async function completeUserProfileByEmail(email: string, input: CompleteP
       .get();
 
     const now = new Date();
-    let userDoc = userSnapshot.docs[0];
+    let userDoc: any = userSnapshot.docs[0];
 
     if (!userDoc) {
       const userRef = firestore.collection('users').doc();

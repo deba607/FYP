@@ -7,12 +7,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-        "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    },
+        // baseUrl/paths removed because imports were converted to relative paths.
 
     /* Bundler mode */
     "moduleResolution": "bundler",

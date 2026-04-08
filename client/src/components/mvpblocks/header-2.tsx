@@ -6,7 +6,7 @@ import { Menu, X, ArrowRight, Search } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { signOut } from 'firebase/auth';
-import { getFirebaseClientAuth } from '@/lib/config/firebaseClient';
+import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { usePathname } from 'next/navigation';
 
 import { ModeToggle } from './mode-toggle'
@@ -42,6 +42,7 @@ export default function Header2() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
 
 
   useEffect(() => {
@@ -71,12 +72,18 @@ export default function Header2() {
       }
     };
 
+    // reset avatar error whenever the user's photo URL changes
+    setAvatarError(false);
+
     loadUser();
     window.addEventListener('storage', loadUser);
     window.addEventListener('focus', loadUser);
+    // listen for in-tab profile updates (dispatched from profile page after upload/remove)
+    window.addEventListener('user_profile_updated', loadUser as EventListener);
     return () => {
       window.removeEventListener('storage', loadUser);
       window.removeEventListener('focus', loadUser);
+      window.removeEventListener('user_profile_updated', loadUser as EventListener);
     };
   }, [pathname]);
 
@@ -236,13 +243,14 @@ export default function Header2() {
               {signedInUser ? (
                 <div className="group relative">
                   <button className="border-border bg-background/90 hover:bg-muted/60 inline-flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors">
-                    {signedInUser.photoURL ? (
+                    {signedInUser.photoURL && !avatarError ? (
                       <Image
                         src={signedInUser.photoURL}
                         alt="Profile"
                         width={34}
                         height={34}
                         className="h-8 w-8 rounded-full object-cover"
+                        onError={() => setAvatarError(true)}
                       />
                     ) : (
                       <span className="bg-foreground text-background inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold">

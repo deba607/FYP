@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useMemo, useState } from 'react';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { createBooking } from '@/lib/api';
+import { Label } from '../ui/label';
+import { Input } from '../ui/input';
+import { buttonVariants } from '../ui/button';
+import { cn } from '../../lib/utils';
+import { createBooking } from '../../lib/api';
 import { User, Mail, Phone, Calendar, Clock, Users } from 'lucide-react';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];

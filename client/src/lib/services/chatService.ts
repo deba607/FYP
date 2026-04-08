@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ApiError } from '@/lib/utils/errors';
+import { ApiError } from '../utils/errors';
 
 const CHATBOT_ENGINE_URL = process.env.CHATBOT_ENGINE_URL || 'http://localhost:5001';
 

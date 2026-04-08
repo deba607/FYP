@@ -1,10 +1,10 @@
 'use client';
 
-import { buttonVariants } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { useMediaQuery } from '@/hooks/use-media-query';
-import { cn } from '@/lib/utils';
+import { buttonVariants } from '../ui/button';
+import { Label } from '../ui/label';
+import { Switch } from '../ui/switch';
+import { useMediaQuery } from '../../hooks/use-media-query';
+import { cn } from '../../lib/utils';
 import { motion } from 'framer-motion';
 import { Check, Star } from 'lucide-react';
 import Link from 'next/link';

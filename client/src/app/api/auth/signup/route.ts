@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { signupUser } from '@/lib/services/authService';
-import { ApiError, toErrorMessage } from '@/lib/utils/errors';
-import { jsonError, jsonSuccess } from '@/lib/utils/apiResponse';
+import { signupUser } from '../../../../lib/services/authService';
+import { ApiError, toErrorMessage } from '../../../../lib/utils/errors';
+import { jsonError, jsonSuccess } from '../../../../lib/utils/apiResponse';
 
 export const runtime = 'nodejs';
 

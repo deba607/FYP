@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { updateBookingStatus } from '@/lib/services/bookingService';
-import { ApiError, toErrorMessage } from '@/lib/utils/errors';
-import { jsonError, jsonSuccess } from '@/lib/utils/apiResponse';
+import { updateBookingStatus } from '../../../../../lib/services/bookingService';
+import { ApiError, toErrorMessage } from '../../../../../lib/utils/errors';
+import { jsonError, jsonSuccess } from '../../../../../lib/utils/apiResponse';
 
 export const runtime = 'nodejs';
 

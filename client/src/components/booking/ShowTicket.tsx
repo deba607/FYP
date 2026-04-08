@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { getBookingByBookingId } from '@/lib/api';
+import { getBookingByBookingId } from '../../lib/api';
 
 import { Search } from 'lucide-react';
 

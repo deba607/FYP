@@ -1,4 +1,4 @@
-import Feature1 from '@/components/mvpblocks/feature-1';
+import Feature1 from '../../components/mvpblocks/feature-1';
 
 export default function FeaturesPage() {
   return (

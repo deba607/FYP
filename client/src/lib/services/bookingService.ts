@@ -1,5 +1,5 @@
-import { getFirebaseFirestore } from '@/lib/config/firebaseAdmin';
-import { ApiError } from '@/lib/utils/errors';
+import { getFirebaseFirestore } from '../config/firebaseAdmin';
+import { ApiError } from '../utils/errors';
 
 const TICKET_PRICES = {
   Adult: 200,
