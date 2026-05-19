@@ -1,5 +1,245 @@
 [
   {
+    "museum_id": "anthropological_museum",
+    "name": "Anthropological Museum",
+    "location": "Port Blair",
+    "state": "Andaman and Nicobar Islands",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "samudrika_naval_marine_museum",
+    "name": "Samudrika Naval Marine Museum",
+    "location": "Port Blair",
+    "state": "Andaman and Nicobar Islands",
+    "category": "Naval/Marine Biology",
+    "price": 200
+  },
+  {
+    "museum_id": "cellular_jail_national_memorial",
+    "name": "Cellular Jail National Memorial",
+    "location": "Port Blair",
+    "state": "Andaman and Nicobar Islands",
+    "category": "History/Freedom Struggle",
+    "price": 200
+  },
+  {
+    "museum_id": "bapu_museum__victoria_jubilee",
+    "name": "Bapu Museum (Victoria Jubilee)",
+    "location": "Vijayawada",
+    "state": "Andhra Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "ins_kursura_submarine_museum",
+    "name": "INS Kursura Submarine Museum",
+    "location": "Visakhapatnam",
+    "state": "Andhra Pradesh",
+    "category": "Maritime/Military",
+    "price": 200
+  },
+  {
+    "museum_id": "visakha_museum",
+    "name": "Visakha Museum",
+    "location": "Visakhapatnam",
+    "state": "Andhra Pradesh",
+    "category": "Heritage",
+    "price": 200
+  },
+  {
+    "museum_id": "tu_142_aircraft_museum",
+    "name": "TU 142 Aircraft Museum",
+    "location": "Visakhapatnam",
+    "state": "Andhra Pradesh",
+    "category": "Aviation/Military",
+    "price": 200
+  },
+  {
+    "museum_id": "bhagwan_mahavir_government_museum",
+    "name": "Bhagwan Mahavir Government Museum",
+    "location": "Kadapa",
+    "state": "Andhra Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "amaravati_archaeological_museum",
+    "name": "Amaravati Archaeological Museum",
+    "location": "Amaravati",
+    "state": "Andhra Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "telugu_samskruthika_niketanam",
+    "name": "Telugu Samskruthika Niketanam",
+    "location": "Visakhapatnam",
+    "state": "Andhra Pradesh",
+    "category": "Cultural Heritage",
+    "price": 200
+  },
+  {
+    "museum_id": "jawaharlal_nehru_museum",
+    "name": "Jawaharlal Nehru Museum",
+    "location": "Itanagar",
+    "state": "Arunachal Pradesh",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "district_museum",
+    "name": "District Museum",
+    "location": "Bomdila",
+    "state": "Arunachal Pradesh",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "assam_state_museum",
+    "name": "Assam State Museum",
+    "location": "Guwahati",
+    "state": "Assam",
+    "category": "Multi-purpose",
+    "price": 200
+  },
+  {
+    "museum_id": "srimanta_sankaradeva_kalakshetra",
+    "name": "Srimanta Sankaradeva Kalakshetra",
+    "location": "Guwahati",
+    "state": "Assam",
+    "category": "Cultural",
+    "price": 200
+  },
+  {
+    "museum_id": "mayong_central_museum",
+    "name": "Mayong Central Museum",
+    "location": "Mayong",
+    "state": "Assam",
+    "category": "Black Magic/History",
+    "price": 200
+  },
+  {
+    "museum_id": "ahom_museum",
+    "name": "Ahom Museum",
+    "location": "Sivasagar",
+    "state": "Assam",
+    "category": "History/Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "digboi_oil_museum",
+    "name": "Digboi Oil Museum",
+    "location": "Digboi",
+    "state": "Assam",
+    "category": "Industrial/Petroleum",
+    "price": 200
+  },
+  {
+    "museum_id": "regional_science_centre",
+    "name": "Regional Science Centre",
+    "location": "Guwahati",
+    "state": "Assam",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "bihar_museum",
+    "name": "Bihar Museum",
+    "location": "Patna",
+    "state": "Bihar",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "patna_museum",
+    "name": "Patna Museum",
+    "location": "Patna",
+    "state": "Bihar",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "nalanda_archaeological_museum",
+    "name": "Nalanda Archaeological Museum",
+    "location": "Nalanda",
+    "state": "Bihar",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "jalan_museum__qila_house",
+    "name": "Jalan Museum (Qila House)",
+    "location": "Patna",
+    "state": "Bihar",
+    "category": "Private Collection/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "srikrishna_science_centre",
+    "name": "Srikrishna Science Centre",
+    "location": "Patna",
+    "state": "Bihar",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "gandhi_sangrahalaya",
+    "name": "Gandhi Sangrahalaya",
+    "location": "Patna",
+    "state": "Bihar",
+    "category": "Biography",
+    "price": 200
+  },
+  {
+    "museum_id": "chandradhari_museum",
+    "name": "Chandradhari Museum",
+    "location": "Darbhanga",
+    "state": "Bihar",
+    "category": "Art/Numismatics",
+    "price": 200
+  },
+  {
+    "museum_id": "government_museum_and_art_gallery",
+    "name": "Government Museum and Art Gallery",
+    "location": "Chandigarh",
+    "state": "Chandigarh",
+    "category": "Art/Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "international_dolls_museum",
+    "name": "International Dolls Museum",
+    "location": "Chandigarh",
+    "state": "Chandigarh",
+    "category": "Dolls",
+    "price": 200
+  },
+  {
+    "museum_id": "le_corbusier_centre",
+    "name": "Le Corbusier Centre",
+    "location": "Chandigarh",
+    "state": "Chandigarh",
+    "category": "Architecture",
+    "price": 200
+  },
+  {
+    "museum_id": "mahant_ghasidas_memorial_museum",
+    "name": "Mahant Ghasidas Memorial Museum",
+    "location": "Raipur",
+    "state": "Chhattisgarh",
+    "category": "Archaeology/Anthropology",
+    "price": 200
+  },
+  {
+    "museum_id": "purkhouti_muktangan",
+    "name": "Purkhouti Muktangan",
+    "location": "Raipur",
+    "state": "Chhattisgarh",
+    "category": "Open-air Museum",
+    "price": 200
+  },
+  {
     "museum_id": "national_museum",
     "name": "National Museum",
     "location": "New Delhi",
@@ -8,19 +248,1131 @@
     "price": 200
   },
   {
+    "museum_id": "national_rail_museum",
+    "name": "National Rail Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Transport/Rail",
+    "price": 200
+  },
+  {
+    "museum_id": "shankar_s_international_dolls_museum",
+    "name": "Shankar's International Dolls Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Dolls",
+    "price": 200
+  },
+  {
+    "museum_id": "national_science_centre",
+    "name": "National Science Centre",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "nehru_memorial_museum___library",
+    "name": "Nehru Memorial Museum & Library",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Biography/History",
+    "price": 200
+  },
+  {
+    "museum_id": "indian_air_force_museum",
+    "name": "Indian Air Force Museum",
+    "location": "Palam",
+    "state": "Delhi",
+    "category": "Military/Aviation",
+    "price": 200
+  },
+  {
+    "museum_id": "national_handicrafts_and_handlooms_museum",
+    "name": "National Handicrafts and Handlooms Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Crafts/Textile",
+    "price": 200
+  },
+  {
+    "museum_id": "gandhi_smriti",
+    "name": "Gandhi Smriti",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Biography",
+    "price": 200
+  },
+  {
+    "museum_id": "national_museum_of_natural_history",
+    "name": "National Museum of Natural History",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Natural History",
+    "price": 200
+  },
+  {
+    "museum_id": "national_philatelic_museum",
+    "name": "National Philatelic Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Stamps",
+    "price": 200
+  },
+  {
+    "museum_id": "sulabh_international_museum_of_toilets",
+    "name": "Sulabh International Museum of Toilets",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Sanitation/History",
+    "price": 200
+  },
+  {
+    "museum_id": "national_gallery_of_modern_art",
+    "name": "National Gallery of Modern Art",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Modern Art",
+    "price": 200
+  },
+  {
+    "museum_id": "red_fort_archaeological_museum",
+    "name": "Red Fort Archaeological Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "Archaeology/Mughal",
+    "price": 200
+  },
+  {
+    "museum_id": "goa_state_museum",
+    "name": "Goa State Museum",
+    "location": "Panaji",
+    "state": "Goa",
+    "category": "History/Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "naval_aviation_museum",
+    "name": "Naval Aviation Museum",
+    "location": "Vasco da Gama",
+    "state": "Goa",
+    "category": "Military/Aviation",
+    "price": 200
+  },
+  {
+    "museum_id": "goa_chitra_museum",
+    "name": "Goa Chitra Museum",
+    "location": "Benaulim",
+    "state": "Goa",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "houses_of_goa_museum",
+    "name": "Houses of Goa Museum",
+    "location": "Porvorim",
+    "state": "Goa",
+    "category": "Architecture",
+    "price": 200
+  },
+  {
+    "museum_id": "big_foot__ancestral_goa",
+    "name": "Big Foot (Ancestral Goa)",
+    "location": "Loutolim",
+    "state": "Goa",
+    "category": "Open-air/Culture",
+    "price": 200
+  },
+  {
+    "museum_id": "calico_museum_of_textiles",
+    "name": "Calico Museum of Textiles",
+    "location": "Ahmedabad",
+    "state": "Gujarat",
+    "category": "Textiles",
+    "price": 200
+  },
+  {
+    "museum_id": "baroda_museum___picture_gallery",
+    "name": "Baroda Museum & Picture Gallery",
+    "location": "Vadodara",
+    "state": "Gujarat",
+    "category": "Art",
+    "price": 200
+  },
+  {
+    "museum_id": "watson_museum",
+    "name": "Watson Museum",
+    "location": "Rajkot",
+    "state": "Gujarat",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "kutch_museum",
+    "name": "Kutch Museum",
+    "location": "Bhuj",
+    "state": "Gujarat",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "lothal_archaeological_museum",
+    "name": "Lothal Archaeological Museum",
+    "location": "Lothal",
+    "state": "Gujarat",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "sardar_vallabhbhai_patel_national_memorial",
+    "name": "Sardar Vallabhbhai Patel National Memorial",
+    "location": "Ahmedabad",
+    "state": "Gujarat",
+    "category": "Biography",
+    "price": 200
+  },
+  {
+    "museum_id": "kite_museum",
+    "name": "Kite Museum",
+    "location": "Ahmedabad",
+    "state": "Gujarat",
+    "category": "Kites",
+    "price": 200
+  },
+  {
+    "museum_id": "auto_world_vintage_car_museum",
+    "name": "Auto World Vintage Car Museum",
+    "location": "Ahmedabad",
+    "state": "Gujarat",
+    "category": "Automobile",
+    "price": 200
+  },
+  {
+    "museum_id": "maharaja_fateh_singh_museum",
+    "name": "Maharaja Fateh Singh Museum",
+    "location": "Vadodara",
+    "state": "Gujarat",
+    "category": "Royal/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "gujarat_science_city",
+    "name": "Gujarat Science City",
+    "location": "Ahmedabad",
+    "state": "Gujarat",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "heritage_transport_museum",
+    "name": "Heritage Transport Museum",
+    "location": "Taoru (Gurugram)",
+    "state": "Haryana",
+    "category": "Transport",
+    "price": 200
+  },
+  {
+    "museum_id": "dharohar_museum",
+    "name": "Dharohar Museum",
+    "location": "Kurukshetra",
+    "state": "Haryana",
+    "category": "Heritage/Folklore",
+    "price": 200
+  },
+  {
+    "museum_id": "rewari_railway_heritage_museum",
+    "name": "Rewari Railway Heritage Museum",
+    "location": "Rewari",
+    "state": "Haryana",
+    "category": "Rail",
+    "price": 200
+  },
+  {
+    "museum_id": "panipat_battle_field_memorial",
+    "name": "Panipat Battle Field Memorial",
+    "location": "Panipat",
+    "state": "Haryana",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "himachal_state_museum",
+    "name": "Himachal State Museum",
+    "location": "Shimla",
+    "state": "Himachal Pradesh",
+    "category": "Multi-purpose",
+    "price": 200
+  },
+  {
+    "museum_id": "library_of_tibetan_works_and_archives",
+    "name": "Library of Tibetan Works and Archives",
+    "location": "Dharamshala",
+    "state": "Himachal Pradesh",
+    "category": "Manuscripts/History",
+    "price": 200
+  },
+  {
+    "museum_id": "bhuri_singh_museum",
+    "name": "Bhuri Singh Museum",
+    "location": "Chamba",
+    "state": "Himachal Pradesh",
+    "category": "Art/History",
+    "price": 200
+  },
+  {
+    "museum_id": "war_museum",
+    "name": "War Museum",
+    "location": "Dharamshala",
+    "state": "Himachal Pradesh",
+    "category": "Military",
+    "price": 200
+  },
+  {
+    "museum_id": "dogra_art_museum",
+    "name": "Dogra Art Museum",
+    "location": "Jammu",
+    "state": "Jammu and Kashmir",
+    "category": "Art",
+    "price": 200
+  },
+  {
+    "museum_id": "sps_museum",
+    "name": "SPS Museum",
+    "location": "Srinagar",
+    "state": "Jammu and Kashmir",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "amar_mahal_museum",
+    "name": "Amar Mahal Museum",
+    "location": "Jammu",
+    "state": "Jammu and Kashmir",
+    "category": "Royal/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "hall_of_fame",
+    "name": "Hall of Fame",
+    "location": "Leh (Ladakh)",
+    "state": "Jammu and Kashmir",
+    "category": "Military",
+    "price": 200
+  },
+  {
+    "museum_id": "ranchi_science_centre",
+    "name": "Ranchi Science Centre",
+    "location": "Ranchi",
+    "state": "Jharkhand",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "state_museum_hotwar",
+    "name": "State Museum Hotwar",
+    "location": "Ranchi",
+    "state": "Jharkhand",
+    "category": "Ethnography/History",
+    "price": 200
+  },
+  {
+    "museum_id": "tribal_research_institute_museum",
+    "name": "Tribal Research Institute Museum",
+    "location": "Ranchi",
+    "state": "Jharkhand",
+    "category": "Tribal Culture",
+    "price": 200
+  },
+  {
+    "museum_id": "government_museum",
+    "name": "Government Museum",
+    "location": "Bengaluru",
+    "state": "Karnataka",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "visvesvaraya_industrial_and_technological_museum",
+    "name": "Visvesvaraya Industrial and Technological Museum",
+    "location": "Bengaluru",
+    "state": "Karnataka",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "hal_heritage_centre_and_aerospace_museum",
+    "name": "HAL Heritage Centre and Aerospace Museum",
+    "location": "Bengaluru",
+    "state": "Karnataka",
+    "category": "Aviation",
+    "price": 200
+  },
+  {
+    "museum_id": "mysore_rail_museum",
+    "name": "Mysore Rail Museum",
+    "location": "Mysuru",
+    "state": "Karnataka",
+    "category": "Rail",
+    "price": 200
+  },
+  {
+    "museum_id": "jaganmohan_palace__jayachamarajendra_art_gallery",
+    "name": "Jaganmohan Palace (Jayachamarajendra Art Gallery)",
+    "location": "Mysuru",
+    "state": "Karnataka",
+    "category": "Art",
+    "price": 200
+  },
+  {
+    "museum_id": "folkloore_museum",
+    "name": "Folkloore Museum",
+    "location": "Mysuru",
+    "state": "Karnataka",
+    "category": "Folklore",
+    "price": 200
+  },
+  {
+    "museum_id": "nimhans_brain_museum",
+    "name": "NIMHANS Brain Museum",
+    "location": "Bengaluru",
+    "state": "Karnataka",
+    "category": "Medical/Science",
+    "price": 200
+  },
+  {
+    "museum_id": "sand_sculpture_museum",
+    "name": "Sand Sculpture Museum",
+    "location": "Mysuru",
+    "state": "Karnataka",
+    "category": "Art",
+    "price": 200
+  },
+  {
+    "museum_id": "manjusha_museum",
+    "name": "Manjusha Museum",
+    "location": "Dharmasthala",
+    "state": "Karnataka",
+    "category": "Heritage/Cars",
+    "price": 200
+  },
+  {
+    "museum_id": "napier_museum",
+    "name": "Napier Museum",
+    "location": "Thiruvananthapuram",
+    "state": "Kerala",
+    "category": "Art/History",
+    "price": 200
+  },
+  {
+    "museum_id": "hill_palace_museum",
+    "name": "Hill Palace Museum",
+    "location": "Kochi",
+    "state": "Kerala",
+    "category": "Royal/Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "kerala_folklore_museum",
+    "name": "Kerala Folklore Museum",
+    "location": "Kochi",
+    "state": "Kerala",
+    "category": "Cultural",
+    "price": 200
+  },
+  {
+    "museum_id": "teak_museum",
+    "name": "Teak Museum",
+    "location": "Nilambur",
+    "state": "Kerala",
+    "category": "Natural History",
+    "price": 200
+  },
+  {
+    "museum_id": "arakkal_museum",
+    "name": "Arakkal Museum",
+    "location": "Kannur",
+    "state": "Kerala",
+    "category": "Royal/History",
+    "price": 200
+  },
+  {
+    "museum_id": "vaidyaratnam_ayurveda_museum",
+    "name": "Vaidyaratnam Ayurveda Museum",
+    "location": "Thrissur",
+    "state": "Kerala",
+    "category": "Medical/Ayurveda",
+    "price": 200
+  },
+  {
+    "museum_id": "kuthiramalika_palace_museum",
+    "name": "Kuthiramalika Palace Museum",
+    "location": "Thiruvananthapuram",
+    "state": "Kerala",
+    "category": "Royal/Architecture",
+    "price": 200
+  },
+  {
+    "museum_id": "kdhp_tea_museum",
+    "name": "KDHP Tea Museum",
+    "location": "Munnar",
+    "state": "Kerala",
+    "category": "Industrial/Tea",
+    "price": 200
+  },
+  {
+    "museum_id": "bharat_bhavan",
+    "name": "Bharat Bhavan",
+    "location": "Bhopal",
+    "state": "Madhya Pradesh",
+    "category": "Multi-arts",
+    "price": 200
+  },
+  {
+    "museum_id": "state_museum",
+    "name": "State Museum",
+    "location": "Bhopal",
+    "state": "Madhya Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "indira_gandhi_rashtriya_manav_sangrahalaya",
+    "name": "Indira Gandhi Rashtriya Manav Sangrahalaya",
+    "location": "Bhopal",
+    "state": "Madhya Pradesh",
+    "category": "Anthropology (National)",
+    "price": 200
+  },
+  {
+    "museum_id": "sanchi_archaeological_museum",
+    "name": "Sanchi Archaeological Museum",
+    "location": "Sanchi",
+    "state": "Madhya Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "archaeological_museum_khajuraho",
+    "name": "Archaeological Museum Khajuraho",
+    "location": "Khajuraho",
+    "state": "Madhya Pradesh",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "jai_vilas_palace_museum",
+    "name": "Jai Vilas Palace Museum",
+    "location": "Gwalior",
+    "state": "Madhya Pradesh",
+    "category": "Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "rani_durgavati_museum",
+    "name": "Rani Durgavati Museum",
+    "location": "Jabalpur",
+    "state": "Madhya Pradesh",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "chhatrapati_shivaji_maharaj_vastu_sangrahalaya__csmvs",
+    "name": "Chhatrapati Shivaji Maharaj Vastu Sangrahalaya (CSMVS)",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "dr__bhau_daji_lad_museum",
+    "name": "Dr. Bhau Daji Lad Museum",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "City History",
+    "price": 200
+  },
+  {
+    "museum_id": "raja_dinkar_kelkar_museum",
+    "name": "Raja Dinkar Kelkar Museum",
+    "location": "Pune",
+    "state": "Maharashtra",
+    "category": "Private Collection",
+    "price": 200
+  },
+  {
+    "museum_id": "mani_bhavan_gandhi_sangrahalaya",
+    "name": "Mani Bhavan Gandhi Sangrahalaya",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "Biography",
+    "price": 200
+  },
+  {
+    "museum_id": "coin_museum",
+    "name": "Coin Museum",
+    "location": "Nashik",
+    "state": "Maharashtra",
+    "category": "Numismatics",
+    "price": 200
+  },
+  {
+    "museum_id": "national_maritime_museum",
+    "name": "National Maritime Museum",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "Maritime",
+    "price": 200
+  },
+  {
+    "museum_id": "cavalry_tank_museum",
+    "name": "Cavalry Tank Museum",
+    "location": "Ahmednagar",
+    "state": "Maharashtra",
+    "category": "Military",
+    "price": 200
+  },
+  {
+    "museum_id": "rbi_monetary_museum",
+    "name": "RBI Monetary Museum",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "Currency/Finance",
+    "price": 200
+  },
+  {
+    "museum_id": "joshi_s_museum_of_miniature_railway",
+    "name": "Joshi's Museum of Miniature Railway",
+    "location": "Pune",
+    "state": "Maharashtra",
+    "category": "Miniatures",
+    "price": 200
+  },
+  {
+    "museum_id": "nehru_science_centre",
+    "name": "Nehru Science Centre",
+    "location": "Mumbai",
+    "state": "Maharashtra",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "tribal_cultural_museum",
+    "name": "Tribal Cultural Museum",
+    "location": "Pune",
+    "state": "Maharashtra",
+    "category": "Tribal Culture",
+    "price": 200
+  },
+  {
+    "museum_id": "manipur_state_museum",
+    "name": "Manipur State Museum",
+    "location": "Imphal",
+    "state": "Manipur",
+    "category": "Multi-purpose",
+    "price": 200
+  },
+  {
+    "museum_id": "ina_war_museum",
+    "name": "INA War Museum",
+    "location": "Moirang",
+    "state": "Manipur",
+    "category": "Military/Freedom Struggle",
+    "price": 200
+  },
+  {
+    "museum_id": "don_bosco_centre_for_indigenous_cultures",
+    "name": "Don Bosco Centre for Indigenous Cultures",
+    "location": "Shillong",
+    "state": "Meghalaya",
+    "category": "Anthropology",
+    "price": 200
+  },
+  {
+    "museum_id": "wankhar_entomology_museum",
+    "name": "Wankhar Entomology Museum",
+    "location": "Shillong",
+    "state": "Meghalaya",
+    "category": "Natural History (Insects)",
+    "price": 200
+  },
+  {
+    "museum_id": "air_force_museum",
+    "name": "Air Force Museum",
+    "location": "Shillong",
+    "state": "Meghalaya",
+    "category": "Aviation",
+    "price": 200
+  },
+  {
+    "museum_id": "mizoram_state_museum",
+    "name": "Mizoram State Museum",
+    "location": "Aizawl",
+    "state": "Mizoram",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "kohima_state_museum",
+    "name": "Kohima State Museum",
+    "location": "Kohima",
+    "state": "Nagaland",
+    "category": "Ethnography",
+    "price": 200
+  },
+  {
+    "museum_id": "world_war_ii_museum",
+    "name": "World War II Museum",
+    "location": "Kisama",
+    "state": "Nagaland",
+    "category": "Military/History",
+    "price": 200
+  },
+  {
+    "museum_id": "odisha_state_museum",
+    "name": "Odisha State Museum",
+    "location": "Bhubaneswar",
+    "state": "Odisha",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "konark_sun_temple_museum",
+    "name": "Konark Sun Temple Museum",
+    "location": "Konark",
+    "state": "Odisha",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "odisha_maritime_museum",
+    "name": "Odisha Maritime Museum",
+    "location": "Cuttack",
+    "state": "Odisha",
+    "category": "Maritime",
+    "price": 200
+  },
+  {
+    "museum_id": "museum_of_tribal_arts_and_artifacts",
+    "name": "Museum of Tribal Arts and Artifacts",
+    "location": "Bhubaneswar",
+    "state": "Odisha",
+    "category": "Tribal Culture",
+    "price": 200
+  },
+  {
+    "museum_id": "regional_science_centre_2",
+    "name": "Regional Science Centre",
+    "location": "Bhubaneswar",
+    "state": "Odisha",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "puducherry_museum",
+    "name": "Puducherry Museum",
+    "location": "Puducherry",
+    "state": "Puducherry",
+    "category": "History/Colonial",
+    "price": 200
+  },
+  {
+    "museum_id": "partition_museum",
+    "name": "Partition Museum",
+    "location": "Amritsar",
+    "state": "Punjab",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "virasat_e_khalsa",
+    "name": "Virasat-e-Khalsa",
+    "location": "Anandpur Sahib",
+    "state": "Punjab",
+    "category": "Sikh History",
+    "price": 200
+  },
+  {
+    "museum_id": "sheesh_mahal_museum",
+    "name": "Sheesh Mahal Museum",
+    "location": "Patiala",
+    "state": "Punjab",
+    "category": "Royal/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "maharaja_ranjit_singh_museum",
+    "name": "Maharaja Ranjit Singh Museum",
+    "location": "Amritsar",
+    "state": "Punjab",
+    "category": "History",
+    "price": 200
+  },
+  {
+    "museum_id": "pushpa_gujral_science_city",
+    "name": "Pushpa Gujral Science City",
+    "location": "Kapurthala",
+    "state": "Punjab",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "albert_hall_museum",
+    "name": "Albert Hall Museum",
+    "location": "Jaipur",
+    "state": "Rajasthan",
+    "category": "State Museum",
+    "price": 200
+  },
+  {
+    "museum_id": "city_palace_museum",
+    "name": "City Palace Museum",
+    "location": "Jaipur",
+    "state": "Rajasthan",
+    "category": "Royal/Textile/Arms",
+    "price": 200
+  },
+  {
+    "museum_id": "city_palace_museum_2",
+    "name": "City Palace Museum",
+    "location": "Udaipur",
+    "state": "Rajasthan",
+    "category": "Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "bagore_ki_haveli",
+    "name": "Bagore Ki Haveli",
+    "location": "Udaipur",
+    "state": "Rajasthan",
+    "category": "Cultural",
+    "price": 200
+  },
+  {
+    "museum_id": "mehrangarh_museum",
+    "name": "Mehrangarh Museum",
+    "location": "Jodhpur",
+    "state": "Rajasthan",
+    "category": "Fort/History",
+    "price": 200
+  },
+  {
+    "museum_id": "anokhi_museum_of_hand_printing",
+    "name": "Anokhi Museum of Hand Printing",
+    "location": "Jaipur",
+    "state": "Rajasthan",
+    "category": "Textiles",
+    "price": 200
+  },
+  {
+    "museum_id": "jaisalmer_war_museum",
+    "name": "Jaisalmer War Museum",
+    "location": "Jaisalmer",
+    "state": "Rajasthan",
+    "category": "Military",
+    "price": 200
+  },
+  {
+    "museum_id": "umaid_bhawan_palace_museum",
+    "name": "Umaid Bhawan Palace Museum",
+    "location": "Jodhpur",
+    "state": "Rajasthan",
+    "category": "Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "maharao_madho_singh_museum",
+    "name": "Maharao Madho Singh Museum",
+    "location": "Kota",
+    "state": "Rajasthan",
+    "category": "Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "namgyal_institute_of_tibetology",
+    "name": "Namgyal Institute of Tibetology",
+    "location": "Gangtok",
+    "state": "Sikkim",
+    "category": "Religious/History",
+    "price": 200
+  },
+  {
+    "museum_id": "directorate_of_handicrafts_and_handloom",
+    "name": "Directorate of Handicrafts and Handloom",
+    "location": "Gangtok",
+    "state": "Sikkim",
+    "category": "Crafts",
+    "price": 200
+  },
+  {
+    "museum_id": "government_museum__egmore_museum",
+    "name": "Government Museum (Egmore Museum)",
+    "location": "Chennai",
+    "state": "Tamil Nadu",
+    "category": "Archaeology/Bronzes",
+    "price": 200
+  },
+  {
+    "museum_id": "gandhi_memorial_museum",
+    "name": "Gandhi Memorial Museum",
+    "location": "Madurai",
+    "state": "Tamil Nadu",
+    "category": "Biography",
+    "price": 200
+  },
+  {
+    "museum_id": "dakshinachitra",
+    "name": "DakshinaChitra",
+    "location": "Chennai",
+    "state": "Tamil Nadu",
+    "category": "Heritage/Living History",
+    "price": 200
+  },
+  {
+    "museum_id": "fort_st__george_museum",
+    "name": "Fort St. George Museum",
+    "location": "Chennai",
+    "state": "Tamil Nadu",
+    "category": "Colonial History",
+    "price": 200
+  },
+  {
+    "museum_id": "gass_forest_museum",
+    "name": "Gass Forest Museum",
+    "location": "Coimbatore",
+    "state": "Tamil Nadu",
+    "category": "Natural History",
+    "price": 200
+  },
+  {
+    "museum_id": "chennai_rail_museum",
+    "name": "Chennai Rail Museum",
+    "location": "Chennai",
+    "state": "Tamil Nadu",
+    "category": "Rail",
+    "price": 200
+  },
+  {
+    "museum_id": "vivekananda_rock_memorial___museum",
+    "name": "Vivekananda Rock Memorial & Museum",
+    "location": "Kanyakumari",
+    "state": "Tamil Nadu",
+    "category": "Biography/Spiritual",
+    "price": 200
+  },
+  {
+    "museum_id": "click_art_museum",
+    "name": "Click Art Museum",
+    "location": "Chennai",
+    "state": "Tamil Nadu",
+    "category": "Interactive Art",
+    "price": 200
+  },
+  {
+    "museum_id": "salar_jung_museum",
+    "name": "Salar Jung Museum",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Art/Antiques (National Importance)",
+    "price": 200
+  },
+  {
+    "museum_id": "birla_science_museum",
+    "name": "Birla Science Museum",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Science/Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "telangana_state_archaeology_museum",
+    "name": "Telangana State Archaeology Museum",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Archaeology",
+    "price": 200
+  },
+  {
+    "museum_id": "chowmahalla_palace",
+    "name": "Chowmahalla Palace",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Royal",
+    "price": 200
+  },
+  {
+    "museum_id": "nizam_s_museum",
+    "name": "Nizam's Museum",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Royal/Jewelry",
+    "price": 200
+  },
+  {
+    "museum_id": "tripura_government_museum",
+    "name": "Tripura Government Museum",
+    "location": "Agartala",
+    "state": "Tripura",
+    "category": "History/Culture",
+    "price": 200
+  },
+  {
+    "museum_id": "state_museum_2",
+    "name": "State Museum",
+    "location": "Lucknow",
+    "state": "Uttar Pradesh",
+    "category": "Multi-purpose",
+    "price": 200
+  },
+  {
+    "museum_id": "sarnath_museum",
+    "name": "Sarnath Museum",
+    "location": "Varanasi",
+    "state": "Uttar Pradesh",
+    "category": "Archaeology/Buddhist",
+    "price": 200
+  },
+  {
+    "museum_id": "allahabad_museum",
+    "name": "Allahabad Museum",
+    "location": "Prayagraj",
+    "state": "Uttar Pradesh",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "taj_museum",
+    "name": "Taj Museum",
+    "location": "Agra",
+    "state": "Uttar Pradesh",
+    "category": "History/Mughal",
+    "price": 200
+  },
+  {
+    "museum_id": "bharat_kala_bhavan",
+    "name": "Bharat Kala Bhavan",
+    "location": "Varanasi",
+    "state": "Uttar Pradesh",
+    "category": "Art/Textiles",
+    "price": 200
+  },
+  {
+    "museum_id": "government_museum_2",
+    "name": "Government Museum",
+    "location": "Mathura",
+    "state": "Uttar Pradesh",
+    "category": "Archaeology/Sculpture",
+    "price": 200
+  },
+  {
+    "museum_id": "rashtriya_dalit_prerna_sthal_and_green_garden",
+    "name": "Rashtriya Dalit Prerna Sthal and Green Garden",
+    "location": "Noida",
+    "state": "Uttar Pradesh",
+    "category": "Memorial/Museum",
+    "price": 200
+  },
+  {
+    "museum_id": "forest_research_institute__fri__museum",
+    "name": "Forest Research Institute (FRI) Museum",
+    "location": "Dehradun",
+    "state": "Uttarakhand",
+    "category": "Forestry",
+    "price": 200
+  },
+  {
+    "museum_id": "wadia_institute_of_himalayan_geology",
+    "name": "Wadia Institute of Himalayan Geology",
+    "location": "Dehradun",
+    "state": "Uttarakhand",
+    "category": "Geology",
+    "price": 200
+  },
+  {
+    "museum_id": "corbett_museum",
+    "name": "Corbett Museum",
+    "location": "Kaladhungi",
+    "state": "Uttarakhand",
+    "category": "Biography/Wildlife",
+    "price": 200
+  },
+  {
     "museum_id": "indian_museum",
     "name": "Indian Museum",
     "location": "Kolkata",
     "state": "West Bengal",
-    "category": "Multi-purpose",
-    "price": 180
+    "category": "Multi-purpose (Oldest in India)",
+    "price": 200
   },
   {
-    "museum_id": "salar_jung",
-    "name": "Salar Jung Museum",
-    "location": "Hyderabad",
-    "state": "Telangana",
-    "category": "Art/Antiques",
-    "price": 220
+    "museum_id": "victoria_memorial_hall",
+    "name": "Victoria Memorial Hall",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "birla_industrial___technological_museum",
+    "name": "Birla Industrial & Technological Museum",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "science_city",
+    "name": "Science City",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Science",
+    "price": 200
+  },
+  {
+    "museum_id": "gurusaday_museum",
+    "name": "Gurusaday Museum",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Folk Art",
+    "price": 200
+  },
+  {
+    "museum_id": "jorasanko_thakur_bari",
+    "name": "Jorasanko Thakur Bari",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Biography (Tagore)",
+    "price": 200
+  },
+  {
+    "museum_id": "netaji_bhawan",
+    "name": "Netaji Bhawan",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Biography/Freedom Struggle",
+    "price": 200
+  },
+  {
+    "museum_id": "kolkata_police_museum",
+    "name": "Kolkata Police Museum",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Police History",
+    "price": 200
+  },
+  {
+    "museum_id": "rail_museum",
+    "name": "Rail Museum",
+    "location": "Howrah",
+    "state": "West Bengal",
+    "category": "Rail",
+    "price": 200
+  },
+  {
+    "museum_id": "mother_s_wax_museum",
+    "name": "Mother's Wax Museum",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Wax",
+    "price": 200
   }
 ]

@@ -1,4 +1,4 @@
-import { getFirebaseFirestore } from '../config/firebaseAdmin';
+import { getFirebaseFirestore, getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
 
 const TICKET_PRICES = {
@@ -12,6 +12,7 @@ const TICKET_PRICES = {
 
 type VisitorType = keyof typeof TICKET_PRICES;
 type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
+type PaymentStatus = 'pending' | 'paid' | 'failed';
 
 export type CreateBookingInput = {
   name: string;
@@ -31,6 +32,30 @@ export type MuseumInfo = {
   museumCategory?: string;
   pricePerTicket?: number;
 };
+
+export type BookingPaymentInfo = {
+  paymentStatus?: PaymentStatus;
+  razorpayOrderId?: string | null;
+  razorpayPaymentId?: string | null;
+  razorpaySignature?: string | null;
+  paymentProvider?: 'razorpay';
+};
+
+export function calculateTicketPrice(visitorType: VisitorType, pricePerTicket?: number) {
+  if (typeof pricePerTicket === 'number' && Number.isFinite(pricePerTicket) && pricePerTicket > 0) {
+    return pricePerTicket;
+  }
+
+  return TICKET_PRICES[visitorType] || 0;
+}
+
+export function calculateBookingTotal(input: Pick<CreateBookingInput, 'visitorType' | 'numberOfTickets'> & MuseumInfo) {
+  const pricePerTicket = calculateTicketPrice(input.visitorType, input.pricePerTicket);
+  return {
+    pricePerTicket,
+    totalAmount: pricePerTicket * input.numberOfTickets
+  };
+}
 
 function generateBookingId() {
   return `BM${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -52,6 +77,34 @@ function toDateString(value: unknown) {
   return new Date().toISOString();
 }
 
+function toRealtimeValue(value: unknown) {
+  return value instanceof Date ? value.toISOString() : value ?? null;
+}
+
+async function mirrorBookingToRealtimeDatabase(booking: Record<string, unknown>) {
+  const database = getFirebaseRealtimeDatabase();
+  const bookingId = String(booking.bookingId || '');
+  const userId = booking.userId ? String(booking.userId) : null;
+
+  if (!bookingId) {
+    return;
+  }
+
+  const realtimePayload = Object.fromEntries(
+    Object.entries(booking).map(([key, value]) => [key, toRealtimeValue(value)])
+  );
+
+  const updates: Record<string, unknown> = {
+    [`bookings/${bookingId}`]: realtimePayload
+  };
+
+  if (userId) {
+    updates[`bookingsByUser/${userId}/${bookingId}`] = realtimePayload;
+  }
+
+  await database.ref().update(updates);
+}
+
 function toBookingResponse(id: string, data: Record<string, unknown>) {
   return {
     _id: id,
@@ -70,23 +123,22 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     museumLocation: data.museumLocation ? String(data.museumLocation) : null,
     museumCategory: data.museumCategory ? String(data.museumCategory) : null,
     pricePerTicket: Number(data.pricePerTicket || 0),
+    paymentStatus: String(data.paymentStatus || 'pending'),
+    paymentProvider: data.paymentProvider ? String(data.paymentProvider) : null,
+    razorpayOrderId: data.razorpayOrderId ? String(data.razorpayOrderId) : null,
+    razorpayPaymentId: data.razorpayPaymentId ? String(data.razorpayPaymentId) : null,
     status: String(data.status || 'confirmed') as BookingStatus,
     createdAt: toDateString(data.createdAt),
     updatedAt: toDateString(data.updatedAt)
   };
 }
 
-export async function createBooking(input: CreateBookingInput & MuseumInfo) {
+export async function createBooking(input: CreateBookingInput & MuseumInfo & Partial<BookingPaymentInfo> & { status?: BookingStatus }) {
   const firestore = getFirebaseFirestore();
 
   // Determine price per ticket: prefer museum-specific price if provided,
   // otherwise fall back to visitor-type pricing.
-  const pricePerTicket =
-    typeof input.pricePerTicket === 'number'
-      ? input.pricePerTicket
-      : TICKET_PRICES[input.visitorType] || 0;
-
-  const totalAmount = pricePerTicket * input.numberOfTickets;
+  const { pricePerTicket, totalAmount } = calculateBookingTotal(input);
 
   const bookingId = generateBookingId();
   const now = new Date();
@@ -109,12 +161,21 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo) {
     museumCategory: input.museumCategory || null,
     pricePerTicket,
     totalAmount,
-    status: 'confirmed' as BookingStatus,
+    paymentStatus: input.paymentStatus || 'pending',
+    paymentProvider: input.paymentProvider || null,
+    razorpayOrderId: input.razorpayOrderId || null,
+    razorpayPaymentId: input.razorpayPaymentId || null,
+    razorpaySignature: input.razorpaySignature || null,
+    status: input.status || 'confirmed' as BookingStatus,
     createdAt: now,
     updatedAt: now
   };
 
   await bookingDoc.set(payload);
+  await mirrorBookingToRealtimeDatabase({
+    ...payload,
+    firestoreDocumentId: bookingDoc.id
+  });
   const booking = toBookingResponse(bookingDoc.id, payload);
 
   return {

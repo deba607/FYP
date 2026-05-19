@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { buttonVariants } from '../ui/button';
 import { cn } from '../../lib/utils';
-import { createBooking } from '../../lib/api';
+import { createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
+import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { User, Mail, Phone, Calendar, Clock, Users } from 'lucide-react';
 import Listbox from '../ui/listbox';
 
@@ -25,6 +26,52 @@ const VISITOR_TYPES = [
   { value: 'Child', label: 'Children', price: 100 },
   { value: 'Adult', label: 'Adult', price: 200 }
 ] as const;
+
+function readBookingProfile() {
+  if (typeof window === 'undefined') {
+    return { name: '', email: '', phone: '' };
+  }
+
+  const raw = localStorage.getItem('museum_auth_user');
+  let stored: any = null;
+
+  if (raw) {
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      stored = null;
+    }
+  }
+
+  const firebaseUser = getFirebaseClientAuth().currentUser as any | null;
+
+  return {
+    name: stored?.name || firebaseUser?.displayName || '',
+    email: stored?.email || firebaseUser?.email || '',
+    phone: stored?.phone || ''
+  };
+}
+
+function loadRazorpayScript() {
+  return new Promise<boolean>((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(false);
+      return;
+    }
+
+    if ((window as any).Razorpay) {
+      resolve(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
 
 
 function BookTicket() {
@@ -46,9 +93,39 @@ function BookTicket() {
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<null | { id: string; summary: string }>(null);
 
+  const uniqueMuseums = useMemo(() => {
+    const seen = new Set<string>();
+    return museums.filter((museum) => {
+      if (seen.has(museum.museum_id)) {
+        return false;
+      }
+      seen.add(museum.museum_id);
+      return true;
+    });
+  }, [museums]);
+
+  useEffect(() => {
+    const loadProfile = () => {
+      const profile = readBookingProfile();
+      setFullName(profile.name);
+      setEmail(profile.email);
+      setPhone(profile.phone);
+    };
+
+    loadProfile();
+    window.addEventListener('storage', loadProfile);
+    window.addEventListener('focus', loadProfile);
+    window.addEventListener('user_profile_updated', loadProfile as EventListener);
+    return () => {
+      window.removeEventListener('storage', loadProfile);
+      window.removeEventListener('focus', loadProfile);
+      window.removeEventListener('user_profile_updated', loadProfile as EventListener);
+    };
+  }, []);
+
   const selectedMuseum = useMemo(() => {
-    return museums.find((m) => m.museum_id === selectedMuseumId) || museums[0];
-  }, [selectedMuseumId]);
+    return uniqueMuseums.find((m) => m.museum_id === selectedMuseumId) || uniqueMuseums[0];
+  }, [selectedMuseumId, uniqueMuseums]);
 
   const selectedVisitor = useMemo(() => {
     return VISITOR_TYPES.find((item) => item.value === visitorType) || VISITOR_TYPES[0];
@@ -95,7 +172,7 @@ function BookTicket() {
     setErrors([]);
 
     try {
-      const response = await createBooking({
+      const bookingPayload = {
         name: fullName,
         email,
         phone,
@@ -108,34 +185,94 @@ function BookTicket() {
         museumLocation: selectedMuseum.location,
         museumCategory: selectedMuseum.category,
         pricePerTicket: selectedVisitor.price,
-        totalPrice: tickets * selectedVisitor.price,
-      });
+        totalPrice: tickets * selectedVisitor.price
+      };
 
-      const booked = response.booking;
+      const orderResponse = await createRazorpayOrder(bookingPayload);
 
-      setSuccess({
-        id: booked.bookingId,
-        summary: `${booked.numberOfTickets} ticket(s) for ${selectedMuseum.name} on ${new Date(booked.visitDate).toLocaleDateString()} at ${booked.timeSlot} — ₹${booked.totalPrice}`
-      });
-
-      try {
-        const mod = await import('canvas-confetti');
-        const confetti = (mod && (mod.default || mod)) as any;
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-      } catch (err) {
-        // ignore if confetti isn't available
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        throw new Error('Unable to load Razorpay checkout. Please try again.');
       }
 
-      setFullName('');
-      setPhone('');
-      setDate('');
-      setTime(TIME_SLOTS[0]);
-      setSelectedMuseumId(MUSEUMS[0].museum_id);
-      setVisitorType('Student');
-      setTickets(1);
+      const RazorpayCheckout = (window as any).Razorpay;
+      if (!RazorpayCheckout) {
+        throw new Error('Payment gateway is unavailable. Please refresh and try again.');
+      }
+
+      const payment = new RazorpayCheckout({
+        key: orderResponse.keyId,
+        amount: orderResponse.order.amount,
+        currency: orderResponse.order.currency,
+        name: 'Bharat Museum Tickets',
+        description: `${selectedMuseum.name} ticket booking`,
+        order_id: orderResponse.order.id,
+        prefill: {
+          name: fullName,
+          email,
+          contact: phone
+        },
+        notes: {
+          museumName: selectedMuseum.name,
+          museumLocation: selectedMuseum.location,
+          museumCategory: selectedMuseum.category,
+          visitorType,
+          numberOfTickets: String(tickets)
+        },
+        theme: {
+          color: '#111827'
+        },
+        modal: {
+          ondismiss: () => {
+            setLoading(false);
+          }
+        },
+        handler: async (response: {
+          razorpay_payment_id: string;
+          razorpay_order_id: string;
+          razorpay_signature: string;
+        }) => {
+          try {
+            const verified = await verifyRazorpayPayment({
+              booking: bookingPayload,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature
+            });
+
+            setSuccess({
+              id: verified.booking.bookingId,
+              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || selectedMuseum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`
+            });
+
+            try {
+              const mod = await import('canvas-confetti');
+              const confetti = (mod && (mod.default || mod)) as any;
+              confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+            } catch {
+              // ignore if confetti isn't available
+            }
+
+            const profile = readBookingProfile();
+            setFullName(profile.name);
+            setEmail(profile.email);
+            setPhone(profile.phone);
+            setDate('');
+            setTime(TIME_SLOTS[0]);
+            setSelectedMuseumId(uniqueMuseums[0]?.museum_id || MUSEUMS[0].museum_id);
+            setVisitorType('Student');
+            setTickets(1);
+          } catch (paymentError) {
+            setErrors([(paymentError as Error).message || 'Payment verification failed. Please contact support.']);
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
+
+      payment.open();
     } catch (error) {
       setErrors([(error as Error).message || 'Booking failed. Please try again.']);
-    } finally {
       setLoading(false);
     }
   };
@@ -151,8 +288,11 @@ function BookTicket() {
       .then((data) => {
         if (!mounted) return;
         if (Array.isArray(data) && data.length > 0) {
-          setMuseums(data);
-          setSelectedMuseumId((prev) => data.find((m: any) => m.museum_id === prev)?.museum_id || data[0].museum_id);
+          const dedupedData = data.filter((museum: any, index: number, self: any[]) =>
+            index === self.findIndex((entry) => entry.museum_id === museum.museum_id)
+          );
+          setMuseums(dedupedData);
+          setSelectedMuseumId((prev) => dedupedData.find((m: any) => m.museum_id === prev)?.museum_id || dedupedData[0].museum_id);
         }
       })
       .catch(() => {
@@ -215,7 +355,7 @@ function BookTicket() {
           <div>
             <div className="mt-1">
               <Listbox
-                items={MUSEUMS.map((m) => ({ value: m.museum_id, label: `${m.name} — ${m.location}` }))}
+                items={uniqueMuseums.map((m) => ({ value: m.museum_id, label: `${m.name} — ${m.location}` }))}
                 value={selectedMuseumId}
                 onChange={(v) => setSelectedMuseumId(v)}
               />
@@ -291,7 +431,7 @@ function BookTicket() {
             className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2')}
             disabled={loading}
           >
-            {loading ? 'Booking…' : 'Book now'}
+            {loading ? 'Opening payment…' : 'Pay & Book now'}
           </button>
         </div>
       </form>

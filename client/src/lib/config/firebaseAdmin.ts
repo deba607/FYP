@@ -1,9 +1,11 @@
 import { getApps, cert, initializeApp, App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getDatabase, Database } from 'firebase-admin/database';
 import { Firestore } from '@google-cloud/firestore';
 
 let firebaseApp: App | null = null;
 let firestoreInstance: Firestore | null = null;
+let realtimeDatabaseInstance: Database | null = null;
 
 export function getFirebaseAdminApp() {
   if (firebaseApp) {
@@ -66,4 +68,20 @@ export function getFirebaseFirestore() {
   }
 
   return firestoreInstance;
+}
+
+export function getFirebaseRealtimeDatabase() {
+  if (realtimeDatabaseInstance) {
+    return realtimeDatabaseInstance;
+  }
+
+  const app = getFirebaseAdminApp();
+  const databaseUrl = process.env.FIREBASE_DATABASE_URL?.trim() || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL?.trim();
+
+  if (!databaseUrl) {
+    throw new Error('Firebase Realtime Database URL is not configured');
+  }
+
+  realtimeDatabaseInstance = getDatabase(app, databaseUrl);
+  return realtimeDatabaseInstance;
 }

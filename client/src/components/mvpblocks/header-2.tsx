@@ -60,16 +60,30 @@ export default function Header2() {
       }
 
       const raw = localStorage.getItem('museum_auth_user');
-      if (!raw) {
+      let storedUser: SignedInUser | null = null;
+
+      if (raw) {
+        try {
+          storedUser = JSON.parse(raw) as SignedInUser;
+        } catch {
+          storedUser = null;
+        }
+      }
+
+      const firebaseUser = getFirebaseClientAuth().currentUser;
+
+      if (!storedUser && !firebaseUser) {
         setSignedInUser(null);
         return;
       }
 
-      try {
-        setSignedInUser(JSON.parse(raw) as SignedInUser);
-      } catch {
-        setSignedInUser(null);
-      }
+      setSignedInUser({
+        ...(storedUser || {}),
+        id: storedUser?.id || firebaseUser?.uid,
+        name: storedUser?.name || firebaseUser?.displayName || '',
+        email: storedUser?.email || firebaseUser?.email || '',
+        photoURL: storedUser?.photoURL || firebaseUser?.photoURL || '',
+      });
     };
 
     // reset avatar error whenever the user's photo URL changes
@@ -78,7 +92,7 @@ export default function Header2() {
     loadUser();
     window.addEventListener('storage', loadUser);
     window.addEventListener('focus', loadUser);
-    // listen for in-tab profile updates (dispatched from profile page after upload/remove)
+    // listen for in-tab profile updates (dispatched from profile page after upload/remove/save)
     window.addEventListener('user_profile_updated', loadUser as EventListener);
     return () => {
       window.removeEventListener('storage', loadUser);
@@ -174,7 +188,7 @@ export default function Header2() {
                 className="flex items-center space-x-3"
               >
                 <div className="relative">
-                  <Image src="/images/logo2.jpeg" alt="Bharat Museum" width={36} height={36} className="h-9 w-9 rounded-xl object-cover shadow-lg" />
+                  <Image src="/images/logo.png" alt="Bharat Museum" width={40} height={40} className="h-10 w-10 rounded-lg object-contain bg-background/90 p-1 shadow-lg" />
                   <div className="absolute -top-1 -right-1 h-3 w-3 animate-pulse rounded-full bg-green-400"></div>
                 </div>
                 <div className="flex flex-col">

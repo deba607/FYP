@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 import Image from 'next/image';
+import { Eye, EyeOff } from 'lucide-react';
 import { completeProfile, uploadProfileImage } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 
@@ -31,6 +32,8 @@ export default function ProfilePage() {
   const [photoChanged, setPhotoChanged] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isGoogleAuthenticated, setIsGoogleAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -170,6 +173,7 @@ export default function ProfilePage() {
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('museum_auth_user', JSON.stringify(result.user));
+        window.dispatchEvent(new Event('user_profile_updated'));
       }
 
       setSuccess('Profile completed successfully. Redirecting to home...');
@@ -246,7 +250,7 @@ export default function ProfilePage() {
             <label className="mb-1 block text-sm font-medium">Email</label>
             <input
               type="email"
-              className="w-full rounded-md border bg-slate-50 px-3 py-2"
+              className="w-full rounded-md border px-3 py-2 bg-white dark:bg-slate-900 text-foreground dark:text-white"
               value={email}
               readOnly
               placeholder="name@example.com"
@@ -287,24 +291,44 @@ export default function ProfilePage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium">Set Password (optional)</label>
-            <input
-              type="password"
-              className="w-full rounded-md border px-3 py-2"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Set a password for email login"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="w-full rounded-md border px-3 py-2 pr-10"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Set a password for email login"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium">Confirm Password</label>
-            <input
-              type="password"
-              className="w-full rounded-md border px-3 py-2"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm your password"
-            />
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                className="w-full rounded-md border px-3 py-2 pr-10"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm your password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2"
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <button

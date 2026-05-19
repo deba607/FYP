@@ -58,9 +58,49 @@ export type BookingResponse = {
   museumCategory?: string | null;
   pricePerTicket?: number;
   totalAmount: number;
+  paymentStatus?: string;
+  paymentProvider?: string | null;
+  razorpayOrderId?: string | null;
+  razorpayPaymentId?: string | null;
   status: string;
   createdAt: string;
 };
+
+export type RazorpayOrderResponse = {
+  success: boolean;
+  keyId: string;
+  order: {
+    id: string;
+    amount: number;
+    currency: string;
+    receipt: string;
+    status: string;
+  };
+  amount: number;
+  currency: string;
+};
+
+export async function createRazorpayOrder(payload: CreateBookingInput) {
+  return apiFetch<RazorpayOrderResponse>(`${API_BASE_URL}/payments/razorpay/order`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function verifyRazorpayPayment(payload: {
+  booking: CreateBookingInput;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}) {
+  return apiFetch<{ success: boolean; message: string; booking: BookingResponse }>(
+    `${API_BASE_URL}/payments/razorpay/verify`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+}
 
 export async function createBooking(payload: CreateBookingInput) {
   return apiFetch<{ success: boolean; message: string; booking: BookingResponse }>(
