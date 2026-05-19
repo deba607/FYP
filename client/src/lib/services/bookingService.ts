@@ -4,8 +4,10 @@ import { ApiError } from '../utils/errors';
 const TICKET_PRICES = {
   Adult: 200,
   Child: 100,
-  Senior: 150,
-  Student: 120
+  'Senior Citizen': 150,
+  Student: 120,
+  Professor: 180,
+  'Researcher/Scientist': 180
 } as const;
 
 type VisitorType = keyof typeof TICKET_PRICES;
@@ -20,6 +22,14 @@ export type CreateBookingInput = {
   numberOfTickets: number;
   visitorType: VisitorType;
   userId?: string;
+};
+
+export type MuseumInfo = {
+  museumId?: string;
+  museumName?: string;
+  museumLocation?: string;
+  museumCategory?: string;
+  pricePerTicket?: number;
 };
 
 function generateBookingId() {
@@ -55,16 +65,27 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     numberOfTickets: Number(data.numberOfTickets || 0),
     visitorType: String(data.visitorType || 'Adult'),
     totalAmount: Number(data.totalAmount || 0),
+    museumId: data.museumId ? String(data.museumId) : null,
+    museumName: data.museumName ? String(data.museumName) : null,
+    museumLocation: data.museumLocation ? String(data.museumLocation) : null,
+    museumCategory: data.museumCategory ? String(data.museumCategory) : null,
+    pricePerTicket: Number(data.pricePerTicket || 0),
     status: String(data.status || 'confirmed') as BookingStatus,
     createdAt: toDateString(data.createdAt),
     updatedAt: toDateString(data.updatedAt)
   };
 }
 
-export async function createBooking(input: CreateBookingInput) {
+export async function createBooking(input: CreateBookingInput & MuseumInfo) {
   const firestore = getFirebaseFirestore();
 
-  const pricePerTicket = TICKET_PRICES[input.visitorType] || 0;
+  // Determine price per ticket: prefer museum-specific price if provided,
+  // otherwise fall back to visitor-type pricing.
+  const pricePerTicket =
+    typeof input.pricePerTicket === 'number'
+      ? input.pricePerTicket
+      : TICKET_PRICES[input.visitorType] || 0;
+
   const totalAmount = pricePerTicket * input.numberOfTickets;
 
   const bookingId = generateBookingId();
@@ -81,6 +102,12 @@ export async function createBooking(input: CreateBookingInput) {
     timeSlot: input.timeSlot,
     numberOfTickets: input.numberOfTickets,
     visitorType: input.visitorType,
+    // Museum reference fields
+    museumId: input.museumId || null,
+    museumName: input.museumName || null,
+    museumLocation: input.museumLocation || null,
+    museumCategory: input.museumCategory || null,
+    pricePerTicket,
     totalAmount,
     status: 'confirmed' as BookingStatus,
     createdAt: now,

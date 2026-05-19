@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+import re
 from chatterbot import ChatBot
 from chatterbot.trainers import ListTrainer
 from .intent_classifier import IntentClassifier
@@ -37,15 +38,41 @@ class MuseumAssistant:
         """Load museum data from CSV file"""
         museums = []
         csv_path = os.path.join(os.path.dirname(__file__), 'indian museum dataset.csv')
-        
+
+        def make_id(name: str, idx: int) -> str:
+            if not name:
+                return f"museum_{idx}"
+            slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+            return slug or f"museum_{idx}"
+
         try:
             with open(csv_path, 'r', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
-                for row in reader:
-                    museums.append(row)
+                for i, row in enumerate(reader, start=1):
+                    name = (row.get('Museum Name') or row.get('Museum') or '').strip()
+                    location = (row.get('City/Location') or row.get('City') or row.get('Location') or '').strip()
+                    state = (row.get('State/UT') or row.get('State') or '').strip()
+                    category = (row.get('Category/Type') or row.get('Category') or '').strip()
+                    # Price may not exist in the CSV; fall back to sensible default
+                    price_raw = (row.get('Price') or row.get('price') or '').strip()
+                    try:
+                        price = float(price_raw) if price_raw else 200.0
+                    except ValueError:
+                        price = 200.0
+
+                    museum = {
+                        'museum_id': make_id(name, i),
+                        'name': name,
+                        'state': state,
+                        'location': location,
+                        'category': category,
+                        'price': price,
+                        'raw': row
+                    }
+                    museums.append(museum)
         except FileNotFoundError:
             print(f"Warning: CSV file not found at {csv_path}")
-        
+
         return museums
 
     def train_bot(self):
@@ -133,10 +160,10 @@ class MuseumAssistant:
         categories = {}
         
         for museum in self.museums_data:
-            state = museum.get('State/UT', '')
-            name = museum.get('Museum Name', '')
-            city = museum.get('City/Location', '')
-            category = museum.get('Category/Type', '')
+            state = museum.get('state', '') or museum.get('State/UT', '')
+            name = museum.get('name', '') or museum.get('Museum Name', '')
+            city = museum.get('location', '') or museum.get('City/Location', '')
+            category = museum.get('category', '') or museum.get('Category/Type', '')
             
             if state not in states:
                 states[state] = []
@@ -195,6 +222,47 @@ class MuseumAssistant:
             trainer.train([
                 f"What is {name}?",
                 f"{name} is located in {city}. {desc}"
+            ])
+
+        # Train QA pairs per museum to improve knowledge and booking prompts
+        for museum in self.museums_data:
+            name = museum.get('name', '').strip()
+            city = museum.get('location', '').strip()
+            state = museum.get('state', '').strip()
+            category = museum.get('category', '').strip()
+            price = museum.get('price', 200)
+            if not name:
+                continue
+
+            # Short description
+            desc = f"{name} is located in {city}, {state}. It is categorized as {category}."
+
+            # Knowledge responses
+            trainer.train([
+                f"Tell me about {name}",
+                desc
+            ])
+            trainer.train([
+                f"Where is {name} located?",
+                f"{name} is located in {city}, {state}."
+            ])
+            trainer.train([
+                f"What is the category of {name}?",
+                f"{name} is a {category} museum."
+            ])
+            trainer.train([
+                f"How much is a ticket for {name}?",
+                f"A general ticket for {name} costs ₹{int(price)}. Discounts may apply for students and seniors."
+            ])
+
+            # Booking prompts
+            trainer.train([
+                f"I want to book tickets for {name}",
+                f"Sure — I can help you book tickets for {name}. What date would you like to visit? Please provide the date in YYYY-MM-DD format."
+            ])
+            trainer.train([
+                f"Book tickets for {name}",
+                f"Okay, how many tickets would you like for {name}, and which visitor category (Adult, Student, Senior, Children)?"
             ])
 
     def get_or_create_session(self, session_id: str):

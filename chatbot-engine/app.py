@@ -32,6 +32,7 @@ except Exception as err:
 
 @app.route('/health', methods=['GET'])
 def health_check():
+    logger.info("Health check - assistant is None: %s", assistant is None)
     if assistant is None:
         return jsonify({
             "status": "unhealthy",

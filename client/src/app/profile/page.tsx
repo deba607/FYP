@@ -172,9 +172,9 @@ export default function ProfilePage() {
         localStorage.setItem('museum_auth_user', JSON.stringify(result.user));
       }
 
-      setSuccess('Profile completed successfully. Redirecting to booking...');
+      setSuccess('Profile completed successfully. Redirecting to home...');
       setTimeout(() => {
-        router.push('/booking');
+        router.push('/');
       }, 1200);
     } catch (err) {
       setError((err as Error).message || 'Failed to save profile.');

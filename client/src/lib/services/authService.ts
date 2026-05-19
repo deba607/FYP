@@ -43,12 +43,17 @@ type CompleteProfileInput = {
 
 function mapFirestoreError(error: unknown, fallbackMessage: string): ApiError {
   const message = error instanceof Error ? error.message : '';
+  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
 
-  if (message.includes('5 NOT_FOUND')) {
+  if (message.includes('5 NOT_FOUND') || message.includes('NOT_FOUND') || code === '5' || code === 'not-found') {
     return new ApiError(
       'Cloud Firestore database not found. Enable Firestore in Firebase console or set FIREBASE_DATABASE_ID correctly.',
       503
     );
+  }
+
+  if (message.includes('PERMISSION_DENIED') || code === 'permission-denied' || code === '7') {
+    return new ApiError('Firestore permission denied. Check Firestore rules and Firebase service account permissions.', 403);
   }
 
   return new ApiError(fallbackMessage, 500);

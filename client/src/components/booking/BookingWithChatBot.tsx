@@ -15,7 +15,7 @@ type BookingData = {
   date?: string;
   time_slot?: string;
   tickets?: number;
-  visitor_type?: 'Adult' | 'Child' | 'Senior' | 'Student';
+  visitor_type?: 'Adult' | 'Child' | 'Senior Citizen' | 'Student' | 'Professor' | 'Researcher/Scientist';
   ready_to_confirm?: boolean;
 };
 
@@ -42,13 +42,7 @@ function toApiTimeSlot(timeSlot?: string) {
 }
 
 export default function BookingWithChatBot() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      from: 'bot',
-      text: 'Hi! I can help with museum info and full ticket booking. Tell me your date, time, number of tickets, and visitor type to begin.',
-      timestamp: new Date().toLocaleTimeString()
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -78,6 +72,21 @@ export default function BookingWithChatBot() {
     const generated = makeSessionId();
     window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
     setSessionId(generated);
+  }, []);
+
+  // Initialize the first bot message on client-side only to avoid SSR/client
+  // timestamp mismatches during hydration.
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([
+        {
+          from: 'bot',
+          text: 'Hi! I can help with museum info and full ticket booking. Tell me your date, time, number of tickets, and visitor category such as student, professor, senior citizen, researcher/scientist, or children to begin.',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const send = async () => {
@@ -139,7 +148,7 @@ export default function BookingWithChatBot() {
     setMessages([
       {
         from: 'bot',
-        text: 'New session started. I can help you book museum tickets end-to-end.',
+        text: 'New session started. I can help you book museum tickets end-to-end using the visitor categories.',
         timestamp: new Date().toLocaleTimeString()
       }
     ]);
@@ -280,7 +289,7 @@ export default function BookingWithChatBot() {
               <div>Date: {bookingData.date}</div>
               <div>Time: {bookingData.time_slot}</div>
               <div>Tickets: {bookingData.tickets}</div>
-              <div>Type: {bookingData.visitor_type}</div>
+              <div>Category: {bookingData.visitor_type}</div>
             </div>
 
             <button

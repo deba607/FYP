@@ -32,8 +32,14 @@ export type CreateBookingInput = {
   visitDate: string;
   timeSlot: string;
   numberOfTickets: number;
-  visitorType: 'Adult' | 'Child' | 'Senior' | 'Student';
+  visitorType: 'Adult' | 'Child' | 'Senior Citizen' | 'Student' | 'Professor' | 'Researcher/Scientist';
   userId?: string;
+  museumId?: string;
+  museumName?: string;
+  museumLocation?: string;
+  museumCategory?: string;
+  pricePerTicket?: number;
+  totalPrice?: number;
 };
 
 export type BookingResponse = {
@@ -46,6 +52,11 @@ export type BookingResponse = {
   timeSlot: string;
   numberOfTickets: number;
   visitorType: string;
+  museumId?: string | null;
+  museumName?: string | null;
+  museumLocation?: string | null;
+  museumCategory?: string | null;
+  pricePerTicket?: number;
   totalAmount: number;
   status: string;
   createdAt: string;

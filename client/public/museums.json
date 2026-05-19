@@ -1,0 +1,26 @@
+[
+  {
+    "museum_id": "national_museum",
+    "name": "National Museum",
+    "location": "New Delhi",
+    "state": "Delhi",
+    "category": "History/Art",
+    "price": 200
+  },
+  {
+    "museum_id": "indian_museum",
+    "name": "Indian Museum",
+    "location": "Kolkata",
+    "state": "West Bengal",
+    "category": "Multi-purpose",
+    "price": 180
+  },
+  {
+    "museum_id": "salar_jung",
+    "name": "Salar Jung Museum",
+    "location": "Hyderabad",
+    "state": "Telangana",
+    "category": "Art/Antiques",
+    "price": 220
+  }
+]

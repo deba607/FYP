@@ -6,8 +6,15 @@ class BookingHandler:
     def __init__(self):
         self.required_fields = ["date", "time_slot", "tickets", "visitor_type"]
         self.time_slots = ["10:00 AM", "12:00 PM", "2:00 PM", "4:00 PM"]
-        self.visitor_types = ["Adult", "Child", "Senior", "Student"]
-        self.prices = {"Adult": 200, "Child": 100, "Senior": 150, "Student": 120}
+        self.visitor_types = ["Adult", "Child", "Senior Citizen", "Student", "Professor", "Researcher/Scientist"]
+        self.prices = {
+            "Adult": 200,
+            "Child": 100,
+            "Senior Citizen": 150,
+            "Student": 120,
+            "Professor": 180,
+            "Researcher/Scientist": 180,
+        }
 
     def handle(self, message: str, booking_data: Dict) -> Dict[str, Any]:
         message_lower = message.lower()
@@ -52,7 +59,7 @@ class BookingHandler:
             if tickets and 1 <= tickets <= 10:
                 booking_data["tickets"] = tickets
                 return {
-                    "message": f"Noted! 🎫 {tickets} ticket(s).\n\nWhat type of visitor are you?\n• Adult (₹200)\n• Child (₹100)\n• Senior (₹150)\n• Student (₹120)",
+                    "message": f"Noted! 🎫 {tickets} ticket(s).\n\nWhat type of visitor are you?\n• Adult (₹200)\n• Child (₹100)\n• Senior Citizen (₹150)\n• Student (₹120)\n• Professor (₹180)\n• Researcher/Scientist (₹180)",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -83,7 +90,7 @@ class BookingHandler:
                 }
             else:
                 return {
-                    "message": "Please select a visitor type:\n• Adult (₹200)\n• Child (₹100)\n• Senior (₹150)\n• Student (₹120)",
+                    "message": "Please select a visitor type:\n• Adult (₹200)\n• Child (₹100)\n• Senior Citizen (₹150)\n• Student (₹120)\n• Professor (₹180)\n• Researcher/Scientist (₹180)",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -186,7 +193,11 @@ class BookingHandler:
         elif "child" in text_lower or "kid" in text_lower or "minor" in text_lower:
             return "Child"
         elif "senior" in text_lower or "elderly" in text_lower or "old" in text_lower:
-            return "Senior"
+            return "Senior Citizen"
         elif "student" in text_lower or "college" in text_lower or "school" in text_lower:
             return "Student"
+        elif "professor" in text_lower or "teacher" in text_lower or "faculty" in text_lower:
+            return "Professor"
+        elif "research" in text_lower or "scientist" in text_lower or "researcher" in text_lower:
+            return "Researcher/Scientist"
         return None

@@ -44,7 +44,7 @@ export default function LoginPage() {
       }
 
       setSuccess('Login successful.');
-      router.push('/booking');
+      router.push('/');
     } catch (err) {
       setError((err as Error).message || 'Login failed. Please try again.');
     } finally {
@@ -69,7 +69,7 @@ export default function LoginPage() {
       }
 
       if (apiResult.user.profileCompleted) {
-        router.push('/booking');
+        router.push('/');
         return;
       }
 
