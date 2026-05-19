@@ -76,12 +76,7 @@ export function getFirebaseRealtimeDatabase() {
   }
 
   const app = getFirebaseAdminApp();
-  const databaseUrl = process.env.FIREBASE_DATABASE_URL?.trim() || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL?.trim();
 
-  if (!databaseUrl) {
-    throw new Error('Firebase Realtime Database URL is not configured');
-  }
-
-  realtimeDatabaseInstance = getDatabase(app, databaseUrl);
+  realtimeDatabaseInstance = getDatabase(app);
   return realtimeDatabaseInstance;
 }
