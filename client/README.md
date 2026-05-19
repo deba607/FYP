@@ -1,4 +1,5 @@
-# Bharat Museum 
+# Bharat Museum (Single Next.js Codebase)
+
 Backend and frontend are now consolidated into one Next.js App Router project with API routes under `src/app/api`.
 
 ## Step-by-Step Migration Plan
