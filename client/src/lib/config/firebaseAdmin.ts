@@ -31,7 +31,8 @@ export function getFirebaseAdminApp() {
       clientEmail,
       privateKey
     }),
-    projectId
+    projectId,
+    databaseURL: process.env.FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
   });
 
   return firebaseApp;

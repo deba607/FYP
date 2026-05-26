@@ -8,6 +8,21 @@ class IntentClassifier:
                 "book", "booking", "reserve", "reservation", "ticket",
                 "buy tickets", "purchase", "get tickets", "want to visit"
             ],
+            "signup": [
+                "sign up", "signup", "register", "create account", "i want to register"
+            ],
+            "signin": [
+                "sign in", "signin", "log in", "login", "i want to sign in", "i want to login"
+            ],
+            "confirm_booking": [
+                "confirm", "confirm booking", "yes confirm", "yes book", "confirm my booking"
+            ],
+            "payment": [
+                "pay", "payment", "pay now", "checkout", "make payment", "pay for"
+            ],
+            "search_ticket": [
+                "search ticket", "find ticket", "show ticket", "my ticket", "find booking"
+            ],
             "check_availability": [
                 "available", "availability", "check", "slots", "time slots"
             ],

@@ -4,6 +4,7 @@ from chatbot.museum_assistant import MuseumAssistant
 from dotenv import load_dotenv
 import os
 import logging
+from firebase_admin_helper import push_chat_message
 
 
 logging.basicConfig(
@@ -79,6 +80,43 @@ def chat():
                 "intent": "error",
                 "booking_data": {}
             }), 200
+
+        # Attempt to persist message logs to Firebase RTDB via Python SDK first
+        try:
+            push_payload = {
+                'sender': 'user',
+                'message': user_message,
+                'timestamp': int(__import__('time').time() * 1000)
+            }
+            push_chat_message(session_id, push_payload)
+
+            bot_payload = {
+                'sender': 'bot',
+                'message': response.get('message', ''),
+                'intent': response.get('intent'),
+                'booking_data': response.get('booking_data', {}),
+                'timestamp': int(__import__('time').time() * 1000)
+            }
+            push_chat_message(session_id, bot_payload)
+        except Exception:
+            logger.debug('Failed to write chat messages to RTDB via Python SDK, will try forwarding to Next.js store route')
+
+        # If Python SDK failed or not configured, still try forwarding to Next.js store route (non-blocking)
+        try:
+            api_base = os.environ.get('CHATBOT_API_URL') or 'http://localhost:3000'
+            store_payload = {
+                'session_id': session_id,
+                'user_message': user_message,
+                'bot_message': response.get('message', ''),
+                'intent': response.get('intent'),
+                'booking_data': response.get('booking_data', {})
+            }
+            try:
+                requests.post(f"{api_base}/api/chat/store", json=store_payload, timeout=2)
+            except Exception as _post_err:
+                logger.debug("Failed to forward chat log to %s: %s", api_base, _post_err)
+        except Exception:
+            logger.debug("Skipping chat log forward due to environment or payload error")
 
         return jsonify({
             "response": response.get("message", "I'm sorry, I couldn't process that."),

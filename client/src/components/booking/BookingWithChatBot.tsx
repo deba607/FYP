@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { MessageCircle, RotateCcw } from 'lucide-react';
 import { createBooking, resetChatSession, sendChatMessage } from '../../lib/api';
+import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 
 type ChatMessage = {
   from: 'user' | 'bot';
@@ -20,9 +21,59 @@ type BookingData = {
 };
 
 const CHAT_SESSION_KEY = 'bharat_museum_chat_session_id';
+const AUTH_USER_KEY = 'museum_auth_user';
 
 function makeSessionId() {
   return `web-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+}
+
+function getStableSessionIdFromLogin() {
+  if (typeof window === 'undefined') return '';
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_USER_KEY);
+    if (!raw) return '';
+
+    const parsed = JSON.parse(raw) as { id?: string; email?: string };
+    const userId = parsed?.id?.trim();
+    const email = parsed?.email?.trim();
+
+    if (userId) {
+      return encodeRtdbKey(`user_${userId}`);
+    }
+
+    if (email) {
+      return encodeRtdbKey(`email_${email.toLowerCase()}`);
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+async function loadChatHistory(sessionId: string) {
+  const response = await fetch(`/api/chat/history?session_id=${encodeURIComponent(sessionId)}&limit=200`, {
+    cache: 'no-store'
+  });
+  const data = (await response.json().catch(() => null)) as
+    | {
+        success: boolean;
+        messages: Array<{ sender: 'user' | 'bot'; message: string; timestamp?: number }>;
+      }
+    | null;
+
+  if (!response.ok || !data?.success) {
+    return [] as ChatMessage[];
+  }
+
+  return (data.messages || [])
+    .filter((m) => m?.message)
+    .map((m) => ({
+      from: m.sender === 'user' ? 'user' : 'bot',
+      text: m.message,
+      timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()
+    }));
 }
 
 function toApiTimeSlot(timeSlot?: string) {
@@ -63,21 +114,38 @@ export default function BookingWithChatBot() {
   }, [bookingData]);
 
   useEffect(() => {
+    const stable = getStableSessionIdFromLogin();
+    if (stable) {
+      window.sessionStorage.setItem(CHAT_SESSION_KEY, stable);
+      setSessionId(stable);
+      return;
+    }
+
     const existing = window.sessionStorage.getItem(CHAT_SESSION_KEY);
     if (existing) {
       setSessionId(existing);
       return;
     }
 
-    const generated = makeSessionId();
+    const generated = encodeRtdbKey(makeSessionId());
     window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
     setSessionId(generated);
   }, []);
 
-  // Initialize the first bot message on client-side only to avoid SSR/client
-  // timestamp mismatches during hydration.
+  // Load stored chat history (if any) when session is ready.
   useEffect(() => {
-    if (messages.length === 0) {
+    if (!sessionId) return;
+
+    let cancelled = false;
+    (async () => {
+      const history = await loadChatHistory(sessionId);
+      if (cancelled) return;
+
+      if (history.length > 0) {
+        setMessages(history);
+        return;
+      }
+
       setMessages([
         {
           from: 'bot',
@@ -85,9 +153,12 @@ export default function BookingWithChatBot() {
           timestamp: new Date().toLocaleTimeString()
         }
       ]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const send = async () => {
     if (!input.trim() || !sessionId) return;
