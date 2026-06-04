@@ -7,8 +7,10 @@ import { buttonVariants } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { User, Mail, Phone, Calendar, Clock, Users } from 'lucide-react';
+import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin } from 'lucide-react';
 import Listbox from '../ui/listbox';
+import { translate } from '../../lib/i18n';
+import { useLanguage } from '../../hooks/use-language';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
 // Sample museum list (will be replaced by API/data source later)
@@ -75,6 +77,7 @@ function loadRazorpayScript() {
 
 
 function BookTicket() {
+  const { language } = useLanguage();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -85,6 +88,8 @@ function BookTicket() {
   const [touchedTickets, setTouchedTickets] = useState(false);
   const [museums, setMuseums] = useState(MUSEUMS);
   const [selectedMuseumId, setSelectedMuseumId] = useState(MUSEUMS[0].museum_id);
+  const [museumQuery, setMuseumQuery] = useState('');
+  const [museumSearchOpen, setMuseumSearchOpen] = useState(false);
   const [visitorType, setVisitorType] = useState<(typeof VISITOR_TYPES)[number]['value']>('Student');
   const [date, setDate] = useState('');
   const [time, setTime] = useState(TIME_SLOTS[0]);
@@ -127,9 +132,30 @@ function BookTicket() {
     return uniqueMuseums.find((m) => m.museum_id === selectedMuseumId) || uniqueMuseums[0];
   }, [selectedMuseumId, uniqueMuseums]);
 
+  const filteredMuseums = useMemo(() => {
+    const query = museumQuery.trim().toLowerCase();
+    if (!query) {
+      return uniqueMuseums.slice(0, 80);
+    }
+
+    return uniqueMuseums
+      .filter((museum) =>
+        [museum.name, museum.location, museum.category]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query))
+      )
+      .slice(0, 80);
+  }, [museumQuery, uniqueMuseums]);
+
   const selectedVisitor = useMemo(() => {
     return VISITOR_TYPES.find((item) => item.value === visitorType) || VISITOR_TYPES[0];
   }, [visitorType]);
+
+  useEffect(() => {
+    if (selectedMuseum && !museumSearchOpen) {
+      setMuseumQuery(`${selectedMuseum.name} — ${selectedMuseum.location}`);
+    }
+  }, [museumSearchOpen, selectedMuseum]);
 
   const total = useMemo(
     () => tickets * (selectedVisitor?.price || selectedMuseum?.price || 200),
@@ -303,7 +329,7 @@ function BookTicket() {
 
   return (
     <div className="max-w-3xl mx-auto rounded-lg bg-background p-6 shadow-sm">
-      <h3 className="mb-4 text-2xl font-semibold">Book Tickets</h3>
+      <h3 className="mb-4 text-2xl font-semibold">{translate(language, 'booking.title')}</h3>
 
       {errors.length > 0 && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -317,14 +343,14 @@ function BookTicket() {
 
       {success ? (
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-          <div className="font-medium">Reservation confirmed — {success.id}</div>
+          <div className="font-medium">{translate(language, 'booking.confirmed')} — {success.id}</div>
           <div className="mt-1 text-sm text-muted-foreground">{success.summary}</div>
         </div>
       ) : null}
 
       <form onSubmit={handleSubmit} className="grid gap-4">
         <div>
-          <Label>Full name</Label>
+          <Label>{translate(language, 'booking.fullName')}</Label>
           <div className="relative">
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><User className="h-4 w-4" /></div>
             <Input aria-invalid={fullNameInvalid} onBlur={() => setTouchedFullName(true)} className="pl-10" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
@@ -333,7 +359,7 @@ function BookTicket() {
         </div>
 
         <div>
-          <Label>Email</Label>
+          <Label>{translate(language, 'booking.email')}</Label>
           <div className="relative">
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Mail className="h-4 w-4" /></div>
             <Input aria-invalid={emailInvalid} onBlur={() => setTouchedEmail(true)} className="pl-10" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" type="email" />
@@ -342,7 +368,7 @@ function BookTicket() {
         </div>
 
         <div>
-          <Label>Phone</Label>
+          <Label>{translate(language, 'booking.phone')}</Label>
           <div className="relative">
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Phone className="h-4 w-4" /></div>
             <Input aria-invalid={phoneInvalid} onBlur={() => setTouchedPhone(true)} className="pl-10" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
@@ -351,14 +377,70 @@ function BookTicket() {
         </div>
 
         <div>
-          <Label>Choose museum</Label>
-          <div>
+          <Label>{translate(language, 'booking.chooseMuseum')}</Label>
+          <div className="relative">
             <div className="mt-1">
-              <Listbox
-                items={uniqueMuseums.map((m) => ({ value: m.museum_id, label: `${m.name} — ${m.location}` }))}
-                value={selectedMuseumId}
-                onChange={(v) => setSelectedMuseumId(v)}
-              />
+              <div className="relative">
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+                  <Search className="h-4 w-4" />
+                </div>
+                <Input
+                  className="pl-10"
+                  value={museumQuery}
+                  onFocus={() => {
+                    setMuseumSearchOpen(true);
+                    setMuseumQuery('');
+                  }}
+                  onChange={(event) => {
+                    setMuseumQuery(event.target.value);
+                    setMuseumSearchOpen(true);
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setMuseumSearchOpen(false), 120);
+                  }}
+                  placeholder={translate(language, 'booking.searchMuseum')}
+                  role="combobox"
+                  aria-expanded={museumSearchOpen}
+                  aria-controls="museum-search-results"
+                />
+              </div>
+
+              {museumSearchOpen ? (
+                <div
+                  id="museum-search-results"
+                  className="absolute z-30 mt-2 max-h-72 w-full overflow-auto rounded-md border bg-background p-1 shadow-xl"
+                >
+                  {filteredMuseums.length > 0 ? (
+                    filteredMuseums.map((museum) => (
+                      <button
+                        key={museum.museum_id}
+                        type="button"
+                        className={cn(
+                          'flex w-full flex-col rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted',
+                          selectedMuseumId === museum.museum_id && 'bg-muted'
+                        )}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setSelectedMuseumId(museum.museum_id);
+                          setMuseumQuery(`${museum.name} — ${museum.location}`);
+                          setMuseumSearchOpen(false);
+                        }}
+                      >
+                        <span className="font-medium">{museum.name}</span>
+                        <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                          <MapPin className="h-3 w-3" />
+                          {museum.location || 'Location unavailable'}
+                          {museum.category ? ` • ${museum.category}` : ''}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      {translate(language, 'booking.noMuseums')}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
             <div className="mt-2 text-sm text-muted-foreground">
               <div>{selectedMuseum.name} • {selectedMuseum.location}</div>
@@ -368,7 +450,7 @@ function BookTicket() {
         </div>
 
         <div>
-          <Label>Visitor category</Label>
+          <Label>{translate(language, 'booking.visitorCategory')}</Label>
           <div>
             <div className="mt-1">
               <Listbox
@@ -382,7 +464,7 @@ function BookTicket() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label>Date</Label>
+            <Label>{translate(language, 'booking.date')}</Label>
             <div className="relative">
               <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Calendar className="h-4 w-4" /></div>
               <Input aria-invalid={dateInvalid} onBlur={() => setTouchedDate(true)} className="pl-10" value={date} onChange={(e) => setDate(e.target.value)} type="date" min={new Date().toISOString().split('T')[0]} />
@@ -390,7 +472,7 @@ function BookTicket() {
             </div>
           </div>
           <div>
-            <Label>Time</Label>
+            <Label>{translate(language, 'booking.time')}</Label>
             <div className="relative">
               <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Clock className="h-4 w-4" /></div>
               <div className="mt-1">
@@ -405,7 +487,7 @@ function BookTicket() {
         </div>
 
         <div>
-          <Label>Number of tickets</Label>
+          <Label>{translate(language, 'booking.ticketCount')}</Label>
           <div className="relative">
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Users className="h-4 w-4" /></div>
             <Input aria-invalid={ticketsInvalid} onBlur={() => setTouchedTickets(true)} className="pl-10" value={tickets} onChange={(e) => setTickets(Math.max(1, Math.min(10, Number(e.target.value) || 1)))} type="number" min={1} max={10} />
@@ -415,12 +497,12 @@ function BookTicket() {
 
         <div className="flex items-center justify-between pt-2">
           <div>
-            <div className="text-sm text-muted-foreground">Price per ticket</div>
+            <div className="text-sm text-muted-foreground">{translate(language, 'booking.pricePerTicket')}</div>
             <div className="text-lg font-semibold">₹{selectedVisitor?.price ?? 200}</div>
           </div>
 
           <div className="text-right">
-            <div className="text-sm text-muted-foreground">Total</div>
+            <div className="text-sm text-muted-foreground">{translate(language, 'booking.total')}</div>
             <div className="text-lg font-semibold">₹{total}</div>
           </div>
         </div>
@@ -431,7 +513,7 @@ function BookTicket() {
             className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2')}
             disabled={loading}
           >
-            {loading ? 'Opening payment…' : 'Pay & Book now'}
+            {loading ? translate(language, 'booking.openingPayment') : translate(language, 'booking.pay')}
           </button>
         </div>
       </form>

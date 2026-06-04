@@ -8,14 +8,58 @@ import os
 import csv
 import requests
 import json
+import logging
+from pathlib import Path
+import time
+
+
+logger = logging.getLogger(__name__)
 
 class MuseumAssistant:
     def __init__(self):
+        self.db_path = Path(__file__).resolve().parent.parent / 'museum_bot.db'
+
         # Create ChatterBot instance with minimal dependencies
-        self.chatbot = ChatBot(
+        self.chatbot = self._create_chatbot()
+        
+        # Load museum data from CSV
+        self.museums_data = self.load_museums_from_csv()
+        
+        # Train the bot with museum-specific conversations
+        try:
+            self.train_bot()
+        except Exception as err:
+            if self._is_database_corruption_error(err):
+                logger.warning("Detected corrupted chatbot database, rebuilding: %s", self.db_path)
+                self._reset_chatbot_database()
+                self.chatbot = self._create_chatbot()
+                try:
+                    self.train_bot()
+                except Exception as second_err:
+                    if not self._is_database_corruption_error(second_err):
+                        raise
+
+                    # If stale processes keep the old DB locked, switch to a fresh DB file.
+                    recovered_name = f"museum_bot_recovered_{int(time.time())}.db"
+                    self.db_path = self.db_path.with_name(recovered_name)
+                    logger.warning("Using fresh chatbot database due to locked/corrupted DB files: %s", self.db_path)
+                    self.chatbot = self._create_chatbot()
+                    self.train_bot()
+            else:
+                raise
+        
+        self.sessions = {}
+        self.intent_classifier = IntentClassifier()
+        self.booking_handler = BookingHandler()
+        # Simple in-memory user store for chatbot-driven signup/signin (development use only)
+        self.users = {}
+
+    def _create_chatbot(self) -> ChatBot:
+        db_uri = f"sqlite:///{self.db_path.as_posix()}"
+        return ChatBot(
             'MuseumBot',
             storage_adapter='chatterbot.storage.SQLStorageAdapter',
-            database_uri='sqlite:///museum_bot.db',
+            database_uri=db_uri,
             logic_adapters=[
                 {
                     'import_path': 'chatterbot.logic.BestMatch',
@@ -25,18 +69,19 @@ class MuseumAssistant:
             ],
             read_only=True  # Prevent writing after training
         )
-        
-        # Load museum data from CSV
-        self.museums_data = self.load_museums_from_csv()
-        
-        # Train the bot with museum-specific conversations
-        self.train_bot()
-        
-        self.sessions = {}
-        self.intent_classifier = IntentClassifier()
-        self.booking_handler = BookingHandler()
-        # Simple in-memory user store for chatbot-driven signup/signin (development use only)
-        self.users = {}
+
+    def _is_database_corruption_error(self, err: Exception) -> bool:
+        error_text = str(err).lower()
+        return "database disk image is malformed" in error_text or "malformed" in error_text
+
+    def _reset_chatbot_database(self) -> None:
+        for suffix in ("", "-wal", "-shm"):
+            file_path = Path(f"{self.db_path}{suffix}")
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as delete_err:
+                logger.warning("Failed to remove corrupted DB file %s: %s", file_path, delete_err)
 
     def load_museums_from_csv(self):
         """Load museum data from CSV file"""
@@ -309,8 +354,9 @@ class MuseumAssistant:
             }
         return self.sessions[session_id]
 
-    def process_message(self, message: str, session_id: str = "default") -> Dict[str, Any]:
+    def process_message(self, message: str, session_id: str = "default", language: str = "en") -> Dict[str, Any]:
         session = self.get_or_create_session(session_id)
+        session["language"] = language
         
         # Classify intent
         intent = self.intent_classifier.classify(message)
@@ -514,9 +560,18 @@ class MuseumAssistant:
         if booking_data.get("visitor_type"):
             summary += f"👤 Type: {booking_data['visitor_type']}\n"
             # Calculate price
-            prices = {"Adult": 200, "Child": 100, "Senior": 150, "Student": 120}
+            prices = {
+                "Adult": 200,
+                "Child": 100,
+                "Senior Citizen": 150,
+                "Student": 120,
+                "Professor": 180,
+                "Researcher/Scientist": 180,
+            }
             total = prices.get(booking_data['visitor_type'], 200) * int(booking_data['tickets'])
             summary += f"💰 Total: ₹{total}\n"
+
+        return summary
         return summary
 
     def reset_session(self, session_id: str):

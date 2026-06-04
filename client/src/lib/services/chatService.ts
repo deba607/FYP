@@ -5,7 +5,7 @@ import { encodeRtdbKey } from '../utils/firebaseKey';
 
 const CHATBOT_ENGINE_URL = process.env.CHATBOT_ENGINE_URL || 'http://localhost:5001';
 
-export async function sendMessageToChatbot(input: { message: string; session_id?: string }) {
+export async function sendMessageToChatbot(input: { message: string; session_id?: string; language?: string }) {
   if (!input.message?.trim()) {
     throw new ApiError('Message is required', 400);
   }
@@ -13,7 +13,8 @@ export async function sendMessageToChatbot(input: { message: string; session_id?
   try {
     const response = await axios.post(`${CHATBOT_ENGINE_URL}/chat`, {
       message: input.message,
-      session_id: input.session_id || 'default'
+      session_id: input.session_id || 'default',
+      language: input.language || 'en'
     });
 
     // Store messages in Firebase Realtime Database (server-side)

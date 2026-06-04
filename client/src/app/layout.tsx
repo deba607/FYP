@@ -1,7 +1,7 @@
 import './globals.css';
-import Header2 from '../components/mvpblocks/header-2';
-import Footer4Col from '../components/mvpblocks/footer-4col';
 import { Providers } from './providers';
+import { AppShell } from './app-shell';
+import { RuntimeEventGuard } from './runtime-event-guard';
 
 export const metadata = {
   title: 'Bharat Museum Tickets',
@@ -11,11 +11,12 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <RuntimeEventGuard />
+      </head>
       <body suppressHydrationWarning>
         <Providers>
-          <Header2 />
-          <main className="min-h-screen pt-16 lg:pt-20">{children}</main>
-          <Footer4Col />
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

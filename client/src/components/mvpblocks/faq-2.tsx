@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../lib/utils';
 import { Badge } from '../../components/ui/badge';
 import { MinusIcon, PlusIcon } from 'lucide-react';
+import { useLanguage } from '../../hooks/use-language';
+import { getSiteTranslation } from '../../lib/site-translations';
 
 interface FaqItem {
   id: string;
@@ -83,6 +85,9 @@ const categories = [
 export default function Faq2() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { language } = useLanguage();
+
+  const t = (text: string) => getSiteTranslation(language, text);
 
   const filteredFaqs =
     activeCategory === 'all'
@@ -101,16 +106,15 @@ export default function Faq2() {
             variant="outline"
             className="border-primary mb-4 px-3 py-1 text-xs font-medium tracking-wider uppercase"
           >
-            FAQs
+            {t('FAQs')}
           </Badge>
 
           <h2 className="text-foreground mb-6 text-center text-4xl font-bold tracking-tight md:text-5xl">
-            Frequently Asked Questions
+            {t('Frequently Asked Questions')}
           </h2>
 
           <p className="text-muted-foreground max-w-2xl text-center">
-            Find answers to common questions about Bharat Museum's intelligent
-            ticketing system and visitor services.
+            {t("Find answers to common questions about Bharat Museum's intelligent ticketing system and visitor services.")}
           </p>
         </div>
 
@@ -127,7 +131,7 @@ export default function Faq2() {
                   : 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
               )}
             >
-              {category.label}
+              {t(category.label)}
             </button>
           ))}
         </div>
@@ -155,7 +159,7 @@ export default function Faq2() {
                   className="flex w-full items-center justify-between p-6 text-left"
                 >
                   <h3 className="text-foreground text-lg font-medium">
-                    {faq.question}
+                    {t(faq.question)}
                   </h3>
                   <div className="ml-4 flex-shrink-0">
                     {expandedId === faq.id ? (
@@ -176,7 +180,7 @@ export default function Faq2() {
                       className="overflow-hidden"
                     >
                       <div className="border-border border-t px-6 pt-2 pb-6">
-                        <p className="text-muted-foreground">{faq.answer}</p>
+                        <p className="text-muted-foreground">{t(faq.answer)}</p>
                       </div>
                     </motion.div>
                   )}
@@ -194,13 +198,13 @@ export default function Faq2() {
           className="mt-16 text-center"
         >
           <p className="text-muted-foreground mb-4">
-            Can&apos;t find what you&apos;re looking for?
+            {t("Can't find what you're looking for?")}
           </p>
           <a
             href="#"
             className="border-primary text-foreground hover:bg-primary hover:text-primary-foreground inline-flex items-center justify-center rounded-lg border-2 px-6 py-3 font-medium transition-colors"
           >
-            Contact Support
+            {t('Contact Support')}
           </a>
         </motion.div>
       </div>

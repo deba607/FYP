@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Dribbble,
   Facebook,
@@ -10,6 +12,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useLanguage } from '../../hooks/use-language';
+import { getSiteTranslation } from '../../lib/site-translations';
+
 const data = {
   facebookLink: 'https://facebook.com/mvpblocks',
   instaLink: 'https://instagram.com/mvpblocks',
@@ -81,6 +86,8 @@ const contactInfo = [
 ];
 
 export default function Footer4Col() {
+  const { language } = useLanguage();
+
   return (
     <footer className="bg-secondary dark:bg-secondary/20 mt-16 w-full place-self-end rounded-t-xl">
       <div className="mx-auto max-w-screen-xl px-4 pt-16 pb-6 sm:px-6 lg:px-8 lg:pt-24">
@@ -122,7 +129,7 @@ export default function Footer4Col() {
 
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 lg:col-span-2">
             <div className="text-center sm:text-left">
-              <p className="text-lg font-medium">About Us</p>
+              <p className="text-lg font-medium">{getSiteTranslation(language, 'About Us')}</p>
               <ul className="mt-8 space-y-4 text-sm">
                 {aboutLinks.map(({ text, href }) => (
                   <li key={text}>
@@ -130,7 +137,7 @@ export default function Footer4Col() {
                       className="text-secondary-foreground/70 transition"
                       href={href as any}
                     >
-                      {text}
+                      {getSiteTranslation(language, text)}
                     </Link>
                   </li>
                 ))}
@@ -138,7 +145,7 @@ export default function Footer4Col() {
             </div>
 
             <div className="text-center sm:text-left">
-              <p className="text-lg font-medium">Our Services</p>
+              <p className="text-lg font-medium">{getSiteTranslation(language, 'Our Services')}</p>
               <ul className="mt-8 space-y-4 text-sm">
                 {serviceLinks.map(({ text, href }) => (
                   <li key={text}>
@@ -146,7 +153,7 @@ export default function Footer4Col() {
                       className="text-secondary-foreground/70 transition"
                       href={href as any}
                     >
-                      {text}
+                      {getSiteTranslation(language, text)}
                     </Link>
                   </li>
                 ))}
@@ -154,7 +161,7 @@ export default function Footer4Col() {
             </div>
 
             <div className="text-center sm:text-left">
-              <p className="text-lg font-medium">Helpful Links</p>
+              <p className="text-lg font-medium">{getSiteTranslation(language, 'Helpful Links')}</p>
               <ul className="mt-8 space-y-4 text-sm">
                 {helpfulLinks.map(({ text, href, hasIndicator }) => (
                   <li key={text}>
@@ -167,7 +174,7 @@ export default function Footer4Col() {
                       }`}
                     >
                       <span className="text-secondary-foreground/70 transition">
-                        {text}
+                        {getSiteTranslation(language, text)}
                       </span>
                       {hasIndicator && (
                         <span className="relative flex size-2">
@@ -182,7 +189,7 @@ export default function Footer4Col() {
             </div>
 
             <div className="text-center sm:text-left">
-              <p className="text-lg font-medium">Contact Us</p>
+              <p className="text-lg font-medium">{getSiteTranslation(language, 'Contact Us')}</p>
               <ul className="mt-8 space-y-4 text-sm">
                 {contactInfo.map(({ icon: Icon, text, isAddress }) => (
                   <li key={text}>
@@ -193,11 +200,11 @@ export default function Footer4Col() {
                       <Icon className="text-primary size-5 shrink-0 shadow-sm" />
                       {isAddress ? (
                         <address className="text-secondary-foreground/70 -mt-0.5 flex-1 not-italic transition">
-                          {text}
+                          {getSiteTranslation(language, text)}
                         </address>
                       ) : (
                         <span className="text-secondary-foreground/70 flex-1 transition">
-                          {text}
+                          {getSiteTranslation(language, text)}
                         </span>
                       )}
                     </a>
@@ -208,14 +215,14 @@ export default function Footer4Col() {
           </div>
         </div>
 
-        <div className="mt-12 border-t pt-6">
+          <div className="mt-12 border-t pt-6">
           <div className="text-center sm:flex sm:justify-between sm:text-left">
             <p className="text-sm">
-              <span className="block sm:inline">All rights reserved.</span>
+              <span className="block sm:inline">{getSiteTranslation(language, 'All rights reserved.')}</span>
             </p>
 
             <p className="text-secondary-foreground/70 mt-4 text-sm transition sm:order-first sm:mt-0">
-              &copy; 2025 {data.company.name}
+              &copy; 2025 {getSiteTranslation(language, data.company.name)}
             </p>
           </div>
         </div>

@@ -118,7 +118,7 @@ export async function getBookingByBookingId(bookingId: string) {
   );
 }
 
-export async function sendChatMessage(message: string, sessionId?: string) {
+export async function sendChatMessage(message: string, sessionId?: string, language?: string) {
   return apiFetch<{
     success: boolean;
     response: string;
@@ -128,7 +128,8 @@ export async function sendChatMessage(message: string, sessionId?: string) {
     method: 'POST',
     body: JSON.stringify({
       message,
-      session_id: sessionId
+      session_id: sessionId,
+      language
     })
   });
 }

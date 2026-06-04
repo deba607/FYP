@@ -5,5 +5,5 @@ function baseValue(value: string) {
 
 // Firebase Realtime Database keys/path segments cannot contain: . # $ [ ] /
 export function encodeRtdbKey(value: string) {
-  return baseValue(value).replace(/[.#$\[\]\/]/g, '_');
+  return baseValue(value).replace(/[.#$[\]/]/g, '_');
 }

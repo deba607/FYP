@@ -31,13 +31,20 @@ export function ThemeProvider({
   const [theme, setTheme] = useState<Theme>(defaultTheme)
 
   useEffect(() => {
-    const stored = typeof window !== 'undefined' ? (localStorage.getItem(storageKey) as Theme | null) : null
+    let stored: Theme | null = null;
+    try {
+      stored = typeof window !== 'undefined' ? (localStorage.getItem(storageKey) as Theme | null) : null
+    } catch {
+      stored = null;
+    }
+
     if (stored) {
       setTheme(stored)
     }
 
     const root = window.document.documentElement;
-    const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    const isDark = theme === "dark" || (theme === "system" && prefersDark);
     
     root.classList.remove("light", "dark");
     root.classList.add(isDark ? "dark" : "light");
@@ -64,7 +71,11 @@ export function ThemeProvider({
   const value = {
     theme,
     setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
+      try {
+        localStorage.setItem(storageKey, theme)
+      } catch {
+        // Keep theme switching usable even if browser storage is blocked.
+      }
       setTheme(theme)
     },
   }
