@@ -38,6 +38,13 @@ class IntentClassifier:
                 "\u099f\u09bf\u0995\u09bf\u099f \u0996\u09c1\u0981\u099c", "\u09ac\u09c1\u0995\u09bf\u0982 \u0996\u09c1\u0981\u099c",
                 "\u0b9f\u0bbf\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd \u0ba4\u0bc7\u0b9f\u0bc1", "\u0baa\u0ba4\u0bbf\u0bb5\u0bc1 \u0ba4\u0bc7\u0b9f\u0bc1"
             ],
+            "search_museums": [
+                "list of museums", "museum list", "museums in", "find museums", "show museums",
+                "search museums", "list museums", "museum directory", "list of museum", "museums list",
+                "संग्रहालय सूची", "संग्रहालयों की सूची", "संग्रहालय कहाँ हैं",
+                "জাদুঘরের তালিকা", "মিউজিয়ামের তালিকা", "জাদুঘর কোথায় আছে",
+                "அருங்காட்சியக பட்டியல்", "அருங்காட்சியகம் எங்கே உள்ளது"
+            ],
             "check_availability": [
                 "available", "availability", "check", "slots", "time slots",
                 "\u0909\u092a\u0932\u092c\u094d\u0927", "\u0938\u094d\u0932\u0949\u091f",
@@ -68,6 +75,17 @@ class IntentClassifier:
 
     def classify(self, message: str) -> str:
         message_lower = message.lower()
+
+        # If there's an obvious booking intent, don't shortcut to search_museums
+        booking_keywords = ("book", "ticket", "reserve", "buy", "purchase", "टिकट", "बुक", "টিকিট", "বুক", "டிக்கெட்", "முன்பதிவு")
+        if any(keyword in message_lower for keyword in booking_keywords):
+            pass
+        else:
+            museum_list_terms = ("list", "show", "find", "search", "directory", "near", "nearby", "in")
+            if ("museum" in message_lower or "museums" in message_lower) and any(
+                term in message_lower for term in museum_list_terms
+            ):
+                return "search_museums"
 
         scores = {}
         for intent, keywords in self.intents.items():

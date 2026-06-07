@@ -2,19 +2,25 @@ from typing import Dict, Any
 import re
 from datetime import datetime
 
+MAX_TICKETS = 6
+
+VISITOR_TYPES = ["Adult", "Child", "Senior Citizen", "Student", "Professor", "Researcher/Scientist"]
+PRICES = {
+    "Adult": 200,
+    "Child": 100,
+    "Senior Citizen": 150,
+    "Student": 120,
+    "Professor": 180,
+    "Researcher/Scientist": 180,
+}
+
+
 class BookingHandler:
     def __init__(self):
         self.required_fields = ["date", "time_slot", "tickets", "visitor_type"]
         self.time_slots = ["10:00 AM", "12:00 PM", "2:00 PM", "4:00 PM"]
-        self.visitor_types = ["Adult", "Child", "Senior Citizen", "Student", "Professor", "Researcher/Scientist"]
-        self.prices = {
-            "Adult": 200,
-            "Child": 100,
-            "Senior Citizen": 150,
-            "Student": 120,
-            "Professor": 180,
-            "Researcher/Scientist": 180,
-        }
+        self.visitor_types = VISITOR_TYPES
+        self.prices = PRICES
 
     def handle(self, message: str, booking_data: Dict) -> Dict[str, Any]:
         message_lower = message.lower()
@@ -25,13 +31,28 @@ class BookingHandler:
             if date:
                 booking_data["date"] = date
                 return {
-                    "message": f"Great! I've noted {date} as your visit date. 📅\n\nWhich time slot would you prefer?\n• 10:00 AM\n• 12:00 PM\n• 2:00 PM\n• 4:00 PM",
+                    "message": f"Great! I've noted {date} as your visit date. 📅\n\nWhich time slot would you prefer?\n1. 10:00 AM\n2. 12:00 PM\n3. 2:00 PM\n4. 4:00 PM",
                     "booking_data": booking_data,
                     "complete": False
                 }
             else:
+                from datetime import timedelta
+                now = datetime.now()
+                dates_list = []
+                for i in range(7):
+                    d = now + timedelta(days=i)
+                    date_str = d.strftime('%Y-%m-%d')
+                    if i == 0:
+                        label = f"{date_str} (Today)"
+                    elif i == 1:
+                        label = f"{date_str} (Tomorrow)"
+                    else:
+                        label = date_str
+                    dates_list.append(f"{i+1}. {label}")
+                
+                dates_message = "\n".join(dates_list)
                 return {
-                    "message": "I'd be happy to help you book tickets! 🎫\n\nWhen would you like to visit? Please provide a date (e.g., 2025-12-20 or December 20).",
+                    "message": f"I'd be happy to help you book tickets! 🎫\n\nWhen would you like to visit? Please select a date:\n{dates_message}",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -41,14 +62,16 @@ class BookingHandler:
             time_slot = self.extract_time_slot(message)
             if time_slot:
                 booking_data["time_slot"] = time_slot
+                tickets_list = [f"{i}. {i}" for i in range(1, MAX_TICKETS + 1)]
+                tickets_str = "\n".join(tickets_list)
                 return {
-                    "message": f"Perfect! ⏰ {time_slot} time slot selected.\n\nHow many tickets would you like to book? (1-10)",
+                    "message": f"Perfect! ⏰ {time_slot} time slot selected.\n\nHow many tickets would you like to book? (1-{MAX_TICKETS}):\n{tickets_str}",
                     "booking_data": booking_data,
                     "complete": False
                 }
             else:
                 return {
-                    "message": "Which time slot works best for you?\n• 10:00 AM\n• 12:00 PM\n• 2:00 PM\n• 4:00 PM",
+                    "message": "Which time slot works best for you?\n1. 10:00 AM\n2. 12:00 PM\n3. 2:00 PM\n4. 4:00 PM",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -56,27 +79,35 @@ class BookingHandler:
         # Extract number of tickets
         if not booking_data.get("tickets"):
             tickets = self.extract_number(message)
-            if tickets and 1 <= tickets <= 10:
+            if tickets and 1 <= tickets <= MAX_TICKETS:
                 booking_data["tickets"] = tickets
+                # Initialize visitor_combo tracking
+                booking_data["visitor_combo"] = {}
+                booking_data["visitor_combo_remaining"] = tickets
+                booking_data["visitor_combo_step"] = 0
+                return self._ask_next_visitor_combo(booking_data)
+            elif tickets and tickets > MAX_TICKETS:
+                tickets_list = [f"{i}. {i}" for i in range(1, MAX_TICKETS + 1)]
+                tickets_str = "\n".join(tickets_list)
                 return {
-                    "message": f"Noted! 🎫 {tickets} ticket(s).\n\nWhat type of visitor are you?\n• Adult (₹200)\n• Child (₹100)\n• Senior Citizen (₹150)\n• Student (₹120)\n• Professor (₹180)\n• Researcher/Scientist (₹180)",
-                    "booking_data": booking_data,
-                    "complete": False
-                }
-            elif tickets and tickets > 10:
-                return {
-                    "message": "Sorry, you can book a maximum of 10 tickets at once. Please specify a number between 1 and 10.",
+                    "message": f"Sorry, you can book a maximum of {MAX_TICKETS} tickets at once. Please specify a number between 1 and {MAX_TICKETS}:\n{tickets_str}",
                     "booking_data": booking_data,
                     "complete": False
                 }
             else:
+                tickets_list = [f"{i}. {i}" for i in range(1, MAX_TICKETS + 1)]
+                tickets_str = "\n".join(tickets_list)
                 return {
-                    "message": "How many tickets would you like to book? (1-10)",
+                    "message": f"How many tickets would you like to book? (1-{MAX_TICKETS}):\n{tickets_str}",
                     "booking_data": booking_data,
                     "complete": False
                 }
         
-        # Extract visitor type
+        # Handle visitor combination flow
+        if booking_data.get("visitor_combo_remaining") is not None and booking_data["visitor_combo_remaining"] > 0:
+            return self._handle_visitor_combo_input(message, booking_data)
+
+        # Extract visitor type (legacy fallback for single visitor type)
         if not booking_data.get("visitor_type"):
             visitor_type = self.extract_visitor_type(message)
             if visitor_type:
@@ -90,13 +121,135 @@ class BookingHandler:
                 }
             else:
                 return {
-                    "message": "Please select a visitor type:\n• Adult (₹200)\n• Child (₹100)\n• Senior Citizen (₹150)\n• Student (₹120)\n• Professor (₹180)\n• Researcher/Scientist (₹180)",
+                    "message": "Please select a visitor type:\n1. Adult (₹200)\n2. Child (₹100)\n3. Senior Citizen (₹150)\n4. Student (₹120)\n5. Professor (₹180)\n6. Researcher/Scientist (₹180)",
                     "booking_data": booking_data,
                     "complete": False
                 }
         
         return {
             "message": "All information collected! ✅",
+            "booking_data": booking_data,
+            "complete": True
+        }
+
+    def _ask_next_visitor_combo(self, booking_data: Dict) -> Dict[str, Any]:
+        """Ask for the count of the next visitor category in the combo."""
+        remaining = booking_data["visitor_combo_remaining"]
+        combo = booking_data.get("visitor_combo", {})
+        total_tickets = booking_data["tickets"]
+
+        if remaining <= 0:
+            # All assigned — finalize
+            return self._finalize_visitor_combo(booking_data)
+
+        # Build the available categories list with prices
+        assigned_so_far = sum(combo.values())
+        lines = [f"🎫 You have {remaining} ticket(s) left to assign (out of {total_tickets})."]
+        if combo:
+            combo_summary = ", ".join(f"{v}× {k}" for k, v in combo.items() if v > 0)
+            lines.append(f"Assigned so far: {combo_summary}")
+        lines.append("")
+        lines.append("How many tickets for each visitor type? Please pick one category at a time:")
+        for idx, vtype in enumerate(VISITOR_TYPES, 1):
+            lines.append(f"{idx}. {vtype} (₹{PRICES[vtype]})")
+        lines.append("")
+        lines.append("Type the category name (or number) and count, e.g. \"2 Adult\" or \"1 Child\", or just the category name for 1 ticket.")
+
+        return {
+            "message": "\n".join(lines),
+            "booking_data": booking_data,
+            "complete": False
+        }
+
+    def _handle_visitor_combo_input(self, message: str, booking_data: Dict) -> Dict[str, Any]:
+        """Parse visitor combo input like '2 Adult', 'Adult 2', 'Adult', '3', etc."""
+        remaining = booking_data["visitor_combo_remaining"]
+        combo = booking_data.get("visitor_combo", {})
+        message_stripped = message.strip()
+
+        # Try to parse "N <type>" or "<type> N" or just "<type>" (defaults to 1)
+        count = None
+        vtype = None
+
+        # First try to extract a visitor type from the message
+        vtype = self.extract_visitor_type(message_stripped)
+
+        # Try to extract a number
+        num = self.extract_number(message_stripped)
+
+        if vtype and num:
+            count = num
+        elif vtype and not num:
+            count = 1  # default: 1 ticket of that type
+        elif num and not vtype:
+            # User typed just a number — maybe they're selecting from the numbered list
+            if 1 <= num <= len(VISITOR_TYPES):
+                vtype = VISITOR_TYPES[num - 1]
+                count = 1
+            else:
+                return {
+                    "message": f"Please specify a visitor category. You have {remaining} ticket(s) left.\nType a category name like \"Adult\" or a number 1-{len(VISITOR_TYPES)} from the list, optionally with a count (e.g. \"2 Adult\").",
+                    "booking_data": booking_data,
+                    "complete": False
+                }
+        else:
+            return {
+                "message": f"I didn't understand that. You have {remaining} ticket(s) left to assign.\nPlease type a category (e.g. \"Adult\", \"2 Child\", \"3 Student\").\n\nAvailable categories:\n" +
+                           "\n".join(f"{i}. {vt} (₹{PRICES[vt]})" for i, vt in enumerate(VISITOR_TYPES, 1)),
+                "booking_data": booking_data,
+                "complete": False
+            }
+
+        # Validate count
+        if count > remaining:
+            return {
+                "message": f"You only have {remaining} ticket(s) left to assign. Please enter {remaining} or fewer for {vtype}.",
+                "booking_data": booking_data,
+                "complete": False
+            }
+
+        if count < 1:
+            return {
+                "message": f"Please enter at least 1 ticket. You have {remaining} ticket(s) left.",
+                "booking_data": booking_data,
+                "complete": False
+            }
+
+        # Add to combo
+        combo[vtype] = combo.get(vtype, 0) + count
+        booking_data["visitor_combo"] = combo
+        booking_data["visitor_combo_remaining"] = remaining - count
+
+        if booking_data["visitor_combo_remaining"] <= 0:
+            return self._finalize_visitor_combo(booking_data)
+        else:
+            return self._ask_next_visitor_combo(booking_data)
+
+    def _finalize_visitor_combo(self, booking_data: Dict) -> Dict[str, Any]:
+        """Finalize the visitor combo, calculate total, and set visitor_type summary."""
+        combo = booking_data.get("visitor_combo", {})
+
+        # Calculate total
+        total = 0
+        combo_lines = []
+        for vtype, count in combo.items():
+            price = PRICES.get(vtype, 200)
+            subtotal = price * count
+            total += subtotal
+            combo_lines.append(f"  {count}× {vtype} @ ₹{price} = ₹{subtotal}")
+
+        # Build a visitor_type summary string
+        visitor_summary = ", ".join(f"{count}× {vtype}" for vtype, count in combo.items() if count > 0)
+        booking_data["visitor_type"] = visitor_summary
+
+        # Also store the primary visitor type (the one with most tickets) for API compatibility
+        primary_type = max(combo, key=combo.get) if combo else "Adult"
+        booking_data["primary_visitor_type"] = primary_type
+        booking_data["visitor_combo_remaining"] = 0
+
+        summary = "\n".join(combo_lines)
+        return {
+            "message": f"Excellent! 👤 Visitor combination selected:\n{summary}\n\n💰 Total Amount: ₹{total}",
             "booking_data": booking_data,
             "complete": True
         }
@@ -110,7 +263,7 @@ class BookingHandler:
             # Validate date
             try:
                 date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                if date_obj >= datetime.now():
+                if date_obj.date() >= datetime.now().date():
                     return date_str
             except ValueError:
                 pass
@@ -135,7 +288,7 @@ class BookingHandler:
                     date_str = f"{year}-{num}-{day}"
                     try:
                         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                        if date_obj >= datetime.now():
+                        if date_obj.date() >= datetime.now().date():
                             return date_str
                     except ValueError:
                         pass

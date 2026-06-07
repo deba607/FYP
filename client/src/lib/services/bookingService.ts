@@ -1,5 +1,6 @@
 import { getFirebaseFirestore, getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
+import { sendBookingConfirmationEmail } from './emailService';
 
 const TICKET_PRICES = {
   Adult: 200,
@@ -177,6 +178,11 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     firestoreDocumentId: bookingDoc.id
   });
   const booking = toBookingResponse(bookingDoc.id, payload);
+
+  // Send booking confirmation email asynchronously (non-blocking)
+  sendBookingConfirmationEmail(booking).catch((err) => {
+    console.error('Failed to send booking confirmation email:', err);
+  });
 
   return {
     success: true,

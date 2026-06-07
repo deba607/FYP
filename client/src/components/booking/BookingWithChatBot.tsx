@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { MessageCircle, RotateCcw } from 'lucide-react';
+import { MessageCircle, RotateCcw, Ticket } from 'lucide-react';
 import { createBooking, resetChatSession, sendChatMessage } from '../../lib/api';
 import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 import { translate } from '../../lib/i18n';
@@ -12,14 +12,35 @@ type ChatMessage = {
   from: 'user' | 'bot';
   text: string;
   timestamp: string;
+  museumOptions?: MuseumOption[];
+  genericOptions?: GenericOption[];
+  bookMuseumName?: string;
+};
+
+type MuseumOption = {
+  label: string;
+  value: string;
+};
+
+type GenericOption = {
+  label: string;
+  value: string;
 };
 
 type BookingData = {
   date?: string;
   time_slot?: string;
   tickets?: number;
-  visitor_type?: 'Adult' | 'Child' | 'Senior Citizen' | 'Student' | 'Professor' | 'Researcher/Scientist';
+  visitor_type?: string;
+  visitor_combo?: Record<string, number>;
+  primary_visitor_type?: 'Adult' | 'Child' | 'Senior Citizen' | 'Student' | 'Professor' | 'Researcher/Scientist';
+  visitor_combo_remaining?: number;
   ready_to_confirm?: boolean;
+  museumName?: string;
+  museumLocation?: string;
+  museumCategory?: string;
+  museumId?: string;
+  pricePerTicket?: number;
 };
 
 const CHAT_SESSION_KEY = 'bharat_museum_chat_session_id';
@@ -54,29 +75,42 @@ function getStableSessionIdFromLogin() {
   }
 }
 
-async function loadChatHistory(sessionId: string) {
-  const response = await fetch(`/api/chat/history?session_id=${encodeURIComponent(sessionId)}&limit=200`, {
-    cache: 'no-store'
-  });
-  const data = (await response.json().catch(() => null)) as
-    | {
-        success: boolean;
-        messages: Array<{ sender: 'user' | 'bot'; message: string; timestamp?: number }>;
-      }
-    | null;
-
-  if (!response.ok || !data?.success) {
-    return [] as ChatMessage[];
-  }
-
-  return (data.messages || [])
-    .filter((m) => m?.message)
-    .map((m) => ({
-      from: m.sender === 'user' ? 'user' as const : 'bot' as const,
-      text: m.message,
-      timestamp: m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()
+function extractMuseumOptions(text: string) {
+  return text
+    .split('\n')
+    .map((line) => line.match(/^\s*\d+\.\s+(.+?)\s*$/)?.[1]?.trim())
+    .filter((name): name is string => Boolean(name))
+    .map((name) => ({
+      label: name,
+      value: name
     }));
 }
+
+function extractGenericOptions(text: string) {
+  return text
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (!match) return null;
+      const label = match[1].trim();
+      let value = label;
+      if (label.includes('(')) {
+        value = label.split('(')[0].trim();
+      }
+      return { label, value };
+    })
+    .filter((opt): opt is { label: string; value: string } => Boolean(opt));
+}
+
+function cleanMessageText(text: string) {
+  return text
+    .split('\n')
+    .filter((line) => !line.trim().match(/^\d+\.\s+/))
+    .join('\n')
+    .trim();
+}
+
 
 function toApiTimeSlot(timeSlot?: string) {
   if (!timeSlot) {
@@ -107,68 +141,44 @@ export default function BookingWithChatBot() {
   const [phone, setPhone] = useState('');
 
   const canConfirm = useMemo(() => {
+    const hasVisitorInfo = Boolean(
+      bookingData.visitor_type ||
+      (bookingData.visitor_combo && Object.values(bookingData.visitor_combo).some((v) => v > 0))
+    );
     return Boolean(
       bookingData.ready_to_confirm &&
         bookingData.date &&
         bookingData.time_slot &&
         bookingData.tickets &&
-        bookingData.visitor_type
+        hasVisitorInfo
     );
   }, [bookingData]);
 
   useEffect(() => {
-    const stable = getStableSessionIdFromLogin();
-    if (stable) {
-      window.sessionStorage.setItem(CHAT_SESSION_KEY, stable);
-      setSessionId(stable);
-      return;
-    }
-
-    const existing = window.sessionStorage.getItem(CHAT_SESSION_KEY);
-    if (existing) {
-      setSessionId(existing);
-      return;
-    }
-
     const generated = encodeRtdbKey(makeSessionId());
     window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
     setSessionId(generated);
   }, []);
 
-  // Load stored chat history (if any) when session is ready.
+  // Initialize welcome message when session is ready.
   useEffect(() => {
     if (!sessionId) return;
 
-    let cancelled = false;
-    (async () => {
-      const history = await loadChatHistory(sessionId);
-      if (cancelled) return;
-
-      if (history.length > 0) {
-        setMessages(history);
-        return;
+    setMessages([
+      {
+        from: 'bot',
+        text: translate(language, 'chat.welcome'),
+        timestamp: new Date().toLocaleTimeString()
       }
-
-      setMessages([
-        {
-          from: 'bot',
-          text: translate(language, 'chat.welcome'),
-          timestamp: new Date().toLocaleTimeString()
-        }
-      ]);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    ]);
   }, [language, sessionId]);
 
-  const send = async () => {
-    if (!input.trim() || !sessionId) return;
+  const sendMessage = async (displayText: string, apiText = displayText) => {
+    if (!displayText.trim() || !sessionId) return;
 
     const msg = {
       from: 'user' as const,
-      text: input.trim(),
+      text: displayText.trim(),
       timestamp: new Date().toLocaleTimeString()
     };
 
@@ -177,11 +187,20 @@ export default function BookingWithChatBot() {
     setSending(true);
 
     try {
-      const response = await sendChatMessage(msg.text, sessionId, language);
+      const response = await sendChatMessage(apiText.trim(), sessionId, language);
+      const isSearchMuseums = response.intent === 'search_museums';
+      const museumOptions = isSearchMuseums
+        ? extractMuseumOptions(response.response || '')
+        : [];
+      const genericOptions = !isSearchMuseums
+        ? extractGenericOptions(response.response || '')
+        : [];
       const reply = {
         from: 'bot' as const,
-        text: response.response || translate(language, 'chat.noResponse'),
-        timestamp: new Date().toLocaleTimeString()
+        text: cleanMessageText(response.response || translate(language, 'chat.noResponse')),
+        timestamp: new Date().toLocaleTimeString(),
+        museumOptions: museumOptions.length > 0 ? museumOptions : undefined,
+        genericOptions: genericOptions.length > 0 ? genericOptions : undefined
       };
 
       setMessages((m) => [...m, reply]);
@@ -201,6 +220,33 @@ export default function BookingWithChatBot() {
     } finally {
       setSending(false);
     }
+  };
+
+  const send = async () => {
+    await sendMessage(input.trim());
+  };
+
+  const chooseMuseum = (museumName: string) => {
+    if (sending || confirming) return;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: 'user',
+        text: museumName,
+        timestamp: new Date().toLocaleTimeString()
+      },
+      {
+        from: 'bot',
+        text: museumName,
+        timestamp: new Date().toLocaleTimeString(),
+        bookMuseumName: museumName
+      }
+    ]);
+  };
+
+  const bookMuseumTickets = async (museumName: string) => {
+    await sendMessage('Book Tickets', `Book tickets for ${museumName}`);
   };
 
   const reset = async () => {
@@ -256,7 +302,12 @@ export default function BookingWithChatBot() {
         visitDate: bookingData.date!,
         timeSlot: toApiTimeSlot(bookingData.time_slot),
         numberOfTickets: Number(bookingData.tickets),
-        visitorType: bookingData.visitor_type!
+        visitorType: (bookingData.primary_visitor_type || bookingData.visitor_type || 'Adult') as any,
+        museumName: bookingData.museumName || (bookingData as any).museum_name || undefined,
+        museumLocation: bookingData.museumLocation || (bookingData as any).museum_location || undefined,
+        museumCategory: bookingData.museumCategory || (bookingData as any).museum_category || undefined,
+        museumId: bookingData.museumId || (bookingData as any).museum_id || undefined,
+        pricePerTicket: bookingData.pricePerTicket || (bookingData as any).price || undefined
       });
 
       setMessages((prev) => [
@@ -311,9 +362,64 @@ export default function BookingWithChatBot() {
         <div className="mb-3 h-105 overflow-auto rounded border p-3">
           {messages.map((m, i) => (
             <div key={i} className={`mb-2 max-w-[85%] ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
-              <div className={`inline-block rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
+              <div className={`inline-block whitespace-pre-line rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
                 {m.text}
               </div>
+              {m.museumOptions && (
+                <div className="mt-2 w-full max-w-xs">
+                  <select
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        chooseMuseum(e.target.value);
+                      }
+                    }}
+                    disabled={sending || confirming}
+                  >
+                    <option value="" disabled>Select a museum...</option>
+                    {m.museumOptions.map((museum) => (
+                      <option key={museum.value} value={museum.value}>
+                        {museum.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {m.genericOptions && (
+                <div className="mt-2 w-full max-w-xs">
+                  <select
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        sendMessage(e.target.value);
+                      }
+                    }}
+                    disabled={sending || confirming}
+                  >
+                    <option value="" disabled>Select an option...</option>
+                    {m.genericOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {m.bookMuseumName && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
+                    onClick={() => bookMuseumTickets(m.bookMuseumName!)}
+                    disabled={sending || confirming}
+                  >
+                    <Ticket className="h-3.5 w-3.5" />
+                    Book Tickets
+                  </button>
+                </div>
+              )}
               <div className="mt-1 text-[10px] opacity-60">{m.timestamp}</div>
             </div>
           ))}
@@ -362,11 +468,22 @@ export default function BookingWithChatBot() {
               disabled={confirming}
             />
 
-            <div className="mb-3 rounded bg-muted p-2 text-xs">
+            <div className="mb-3 rounded bg-muted p-2 text-xs" data-bmt-no-translate>
               <div>{translate(language, 'booking.date')}: {bookingData.date}</div>
               <div>{translate(language, 'booking.time')}: {bookingData.time_slot}</div>
               <div>{translate(language, 'booking.ticketCount')}: {bookingData.tickets}</div>
-              <div>{translate(language, 'booking.visitorCategory')}: {bookingData.visitor_type}</div>
+              {bookingData.visitor_combo && Object.keys(bookingData.visitor_combo).length > 0 ? (
+                <div>
+                  <div className="mt-1 font-semibold">{translate(language, 'booking.visitorCategory')}:</div>
+                  {Object.entries(bookingData.visitor_combo).map(([vtype, count]) => (
+                    count > 0 ? (
+                      <div key={vtype} className="ml-2">{count}× {vtype}</div>
+                    ) : null
+                  ))}
+                </div>
+              ) : (
+                <div>{translate(language, 'booking.visitorCategory')}: {bookingData.visitor_type}</div>
+              )}
             </div>
 
             <button

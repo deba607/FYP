@@ -360,6 +360,50 @@ class MuseumAssistant:
         
         # Classify intent
         intent = self.intent_classifier.classify(message)
+        if self.is_museum_list_query(message):
+            intent = "search_museums"
+
+        # --- Search Museums flow ---
+        if intent == "search_museums" or session.get("in_search_museums_flow"):
+            session["in_search_museums_flow"] = True
+            loc = self.extract_location(message)
+            if loc:
+                results = self.get_museums_by_location(loc)
+                session["in_search_museums_flow"] = False
+                session["waiting_for_location"] = False
+                if results:
+                    lines = []
+                    for m in results:
+                        lines.append(f"{m['name']} — {m['location']}, {m['state']} — ₹{int(m.get('price', 200))}")
+                    response = "\n".join(lines)
+                    response = self.format_museum_list_response(loc, results, language)
+                else:
+                    response = "I couldn't find any museums in that location. Please specify a different city or state/UT in India."
+                
+                return {
+                    "message": response,
+                    "intent": "search_museums",
+                    "booking_data": session.get("booking_data", {})
+                }
+            else:
+                if session.get("waiting_for_location"):
+                    session["in_search_museums_flow"] = False
+                    session["waiting_for_location"] = False
+                    response = "I couldn't find any museums in that location. Please specify a different city or state/UT in India."
+                    return {
+                        "message": response,
+                        "intent": "search_ticket",
+                        "booking_data": session.get("booking_data", {})
+                    }
+                else:
+                    session["waiting_for_location"] = True
+                    response = "Sure! Which city or state/UT would you like to search museums for?"
+                    return {
+                        "message": response,
+                        "intent": "general",
+                        "booking_data": session.get("booking_data", {})
+                    }
+
         # --- Signup flow ---
         if intent == "signup" or session.get("in_signup_flow"):
             # Start signup
@@ -483,7 +527,7 @@ class MuseumAssistant:
                     "visitDate": booking.get("date") or booking.get("visitDate") or booking.get("visit_date"),
                     "timeSlot": booking.get("time_slot") or booking.get("timeSlot"),
                     "numberOfTickets": int(booking.get("tickets") or booking.get("numberOfTickets") or 1),
-                    "visitorType": booking.get("visitor_type") or booking.get("visitorType") or "Adult",
+                    "visitorType": booking.get("primary_visitor_type") or booking.get("visitor_type") or booking.get("visitorType") or "Adult",
                     "museumName": booking.get("museumName") or booking.get("museum_name") or None,
                     "museumLocation": booking.get("museumLocation") or booking.get("museum_location") or None
                 }
@@ -525,6 +569,23 @@ class MuseumAssistant:
         if intent in ["book_ticket", "check_availability"] or session["in_booking_flow"]:
             session["in_booking_flow"] = True
             
+            # Extract museum details if present in the message and not already set
+            if not session.get("booking_data"):
+                session["booking_data"] = {}
+            if not session["booking_data"].get("museum_name"):
+                museum = self.extract_museum_from_text(message)
+                if museum:
+                    session["booking_data"]["museum_name"] = museum["name"]
+                    session["booking_data"]["museum_location"] = museum["location"]
+                    session["booking_data"]["museum_state"] = museum["state"]
+                    session["booking_data"]["museum_id"] = museum["museum_id"]
+                    session["booking_data"]["museum_category"] = museum["category"]
+                    session["booking_data"]["pricePerTicket"] = museum["price"]
+                    # Also keep camelCase variants for frontend compatibility
+                    session["booking_data"]["museumName"] = museum["name"]
+                    session["booking_data"]["museumLocation"] = museum["location"]
+                    session["booking_data"]["museumCategory"] = museum["category"]
+            
             booking_response = self.booking_handler.handle(
                 message, 
                 session["booking_data"]
@@ -551,15 +612,19 @@ class MuseumAssistant:
     def format_booking_summary(self, booking_data: Dict) -> str:
         """Format booking data into a readable summary"""
         summary = "📋 Booking Summary:\n"
+        museum_name = booking_data.get("museumName") or booking_data.get("museum_name")
+        if museum_name:
+            summary += f"🏛️ Museum: {museum_name}\n"
         if booking_data.get("date"):
             summary += f"📅 Date: {booking_data['date']}\n"
         if booking_data.get("time_slot"):
             summary += f"🕐 Time: {booking_data['time_slot']}\n"
         if booking_data.get("tickets"):
             summary += f"🎫 Tickets: {booking_data['tickets']}\n"
-        if booking_data.get("visitor_type"):
-            summary += f"👤 Type: {booking_data['visitor_type']}\n"
-            # Calculate price
+
+        # Show visitor combo breakdown if available
+        combo = booking_data.get("visitor_combo")
+        if combo and isinstance(combo, dict) and any(v > 0 for v in combo.values()):
             prices = {
                 "Adult": 200,
                 "Child": 100,
@@ -568,10 +633,29 @@ class MuseumAssistant:
                 "Professor": 180,
                 "Researcher/Scientist": 180,
             }
-            total = prices.get(booking_data['visitor_type'], 200) * int(booking_data['tickets'])
+            summary += "👤 Visitors:\n"
+            total = 0
+            for vtype, count in combo.items():
+                if count > 0:
+                    price = prices.get(vtype, 200)
+                    subtotal = price * count
+                    total += subtotal
+                    summary += f"   {count}× {vtype} @ ₹{price} = ₹{subtotal}\n"
+            summary += f"💰 Total: ₹{total}\n"
+        elif booking_data.get("visitor_type"):
+            summary += f"👤 Type: {booking_data['visitor_type']}\n"
+            prices = {
+                "Adult": 200,
+                "Child": 100,
+                "Senior Citizen": 150,
+                "Student": 120,
+                "Professor": 180,
+                "Researcher/Scientist": 180,
+            }
+            price_per_ticket = booking_data.get("pricePerTicket") or booking_data.get("price") or prices.get(booking_data['visitor_type'], 200)
+            total = int(price_per_ticket) * int(booking_data['tickets'])
             summary += f"💰 Total: ₹{total}\n"
 
-        return summary
         return summary
 
     def reset_session(self, session_id: str):
@@ -608,3 +692,112 @@ class MuseumAssistant:
         # sort by score desc
         results.sort(key=lambda x: x[0], reverse=True)
         return [r[1] for r in results]
+
+    def is_museum_list_query(self, text: str) -> bool:
+        """Detect location-based museum list requests before ChatterBot fallback."""
+        normalized_text = text.lower()
+
+        # If the user is expressing booking intent, it is NOT a museum list query
+        booking_keywords = ("book", "ticket", "reserve", "buy", "purchase", "टिकट", "बुक", "টিকিট", "বুক", "டிக்கெட்", "முன்பதிவு")
+        if any(keyword in normalized_text for keyword in booking_keywords):
+            return False
+
+        has_museum_word = "museum" in normalized_text or "museums" in normalized_text
+        has_location = bool(self.extract_location(text))
+
+        list_words = ("list", "show", "find", "search", "directory", "near", "nearby")
+        if has_museum_word and (has_location or any(word in normalized_text for word in list_words)):
+            return True
+
+        if has_location and any(word in normalized_text for word in list_words):
+            return True
+
+        return bool(re.search(r"\bmuseums?\s+in\b|\bin\s+.+\bmuseums?\b", normalized_text))
+
+    def extract_location(self, text: str) -> str:
+        """Extract a valid city or state/UT name from the text using loaded museum data"""
+        normalized_text = text.lower().strip()
+        
+        cities = set()
+        states = set()
+        for m in self.museums_data:
+            if m.get('location'):
+                cities.add(m['location'].lower())
+            if m.get('state'):
+                states.add(m['state'].lower())
+        
+        for state in sorted(states, key=len, reverse=True):
+            if re.search(r'\b' + re.escape(state) + r'\b', normalized_text):
+                return state
+                
+        for city in sorted(cities, key=len, reverse=True):
+            if re.search(r'\b' + re.escape(city) + r'\b', normalized_text):
+                return city
+                
+        for state in sorted(states, key=len, reverse=True):
+            if len(state) >= 3 and state in normalized_text:
+                return state
+        for city in sorted(cities, key=len, reverse=True):
+            if len(city) >= 3 and city in normalized_text:
+                return city
+                
+        return ""
+
+    def extract_museum_from_text(self, text: str) -> Dict[str, Any]:
+        """Extract a museum from the text based on loaded museum names."""
+        text_lower = text.lower().strip()
+        if not text_lower:
+            return None
+
+        # Sort museums by name length descending so we match the most specific name first
+        sorted_museums = sorted(self.museums_data, key=lambda m: len(m.get('name', '')), reverse=True)
+        for m in sorted_museums:
+            name = (m.get('name') or '').strip().lower()
+            if name and name in text_lower:
+                return m
+        return None
+
+    def get_museums_by_location(self, location: str) -> List[Dict[str, Any]]:
+        loc = location.lower().strip()
+        results = []
+        for m in self.museums_data:
+            city = (m.get('location') or '').lower()
+            state = (m.get('state') or '').lower()
+            if city == loc or state == loc:
+                results.append(m)
+        return sorted(results, key=lambda m: ((m.get('location') or ''), (m.get('name') or '')))
+
+    def format_museum_list_response(self, location: str, museums: List[Dict[str, Any]], language: str = "en") -> str:
+        """Format all museums found for the requested city/state."""
+        location_label = self.localize_location_label(location, language)
+        headings = {
+            "en": f"Museums in {location_label}:",
+            "hi": f"संग्रहालय सूची ({location_label}):",
+            "bn": f"জাদুঘরের তালিকা ({location_label}):",
+            "ta": f"அருங்காட்சியக பட்டியல் ({location_label}):",
+        }
+        lines = [headings.get(language, headings["en"]), ""]
+
+        for index, museum in enumerate(museums, start=1):
+            name = museum.get('name') or 'Unnamed Museum'
+            lines.append(f"{index}. {name}")
+
+        return "\n".join(lines)
+
+    def localize_location_label(self, location: str, language: str) -> str:
+        """Return a display label for common searched locations in the selected UI language."""
+        labels = {
+            "assam": {"hi": "असम", "bn": "অসম", "ta": "அசாம்"},
+            "kolkata": {"hi": "कोलकाता", "bn": "কলকাতা", "ta": "கொல்கத்தா"},
+            "west bengal": {"hi": "पश्चिम बंगाल", "bn": "पश्चिमবঙ্গ", "ta": "மேற்கு வங்காளம்"},
+            "new delhi": {"hi": "नई दिल्ली", "bn": "নয়াদিল্লি", "ta": "புது தில்லி"},
+            "delhi": {"hi": "दिल्ली", "bn": "दিল্লি", "ta": "தில்லி"},
+            "mumbai": {"hi": "मुंबई", "bn": "মুম্বাই", "ta": "மும்பை"},
+            "maharashtra": {"hi": "महाराष्ट्र", "bn": "মহারাষ্ট্র", "ta": "மகாராஷ்டிரா"},
+            "chennai": {"hi": "चेन्नई", "bn": "চেন্নাই", "ta": "சென்னை"},
+            "tamil nadu": {"hi": "तमिलनाडु", "bn": "তামিলநாড়ू", "ta": "தமிழ்நாடு"},
+            "hyderabad": {"hi": "हैदराबाद", "bn": "हायदराबाद", "ta": "ஹைதராபாத்"},
+            "telangana": {"hi": "तेलंगाना", "bn": "তেলেঙ্গানা", "ta": "தெலுங்கானா"},
+        }
+        normalized_location = location.lower().strip()
+        return labels.get(normalized_location, {}).get(language, location.title())
