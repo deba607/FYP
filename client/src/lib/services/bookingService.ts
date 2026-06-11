@@ -1,6 +1,7 @@
 import { getFirebaseFirestore, getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
 import { sendBookingConfirmationEmail } from './emailService';
+import { logUserActivity } from './activityService';
 
 const TICKET_PRICES = {
   Adult: 200,
@@ -22,8 +23,9 @@ export type CreateBookingInput = {
   visitDate: string;
   timeSlot: 'Morning (9 AM-12 PM)' | 'Afternoon (12 PM-3 PM)' | 'Evening (3 PM-6 PM)';
   numberOfTickets: number;
-  visitorType: VisitorType;
+  visitorType: string;
   userId?: string;
+  visitorCombo?: Record<string, number> | null;
 };
 
 export type MuseumInfo = {
@@ -42,16 +44,67 @@ export type BookingPaymentInfo = {
   paymentProvider?: 'razorpay';
 };
 
-export function calculateTicketPrice(visitorType: VisitorType, pricePerTicket?: number) {
+export function calculateTicketPrice(visitorType: string, pricePerTicket?: number) {
   if (typeof pricePerTicket === 'number' && Number.isFinite(pricePerTicket) && pricePerTicket > 0) {
     return pricePerTicket;
   }
 
-  return TICKET_PRICES[visitorType] || 0;
+  return TICKET_PRICES[visitorType as VisitorType] || 0;
 }
 
-export function calculateBookingTotal(input: Pick<CreateBookingInput, 'visitorType' | 'numberOfTickets'> & MuseumInfo) {
-  const pricePerTicket = calculateTicketPrice(input.visitorType, input.pricePerTicket);
+export function calculateBookingTotal(
+  input: Pick<CreateBookingInput, 'visitorType' | 'numberOfTickets'> & MuseumInfo & { visitorCombo?: Record<string, number> | null },
+  customPrices?: Record<string, number> | null
+) {
+  if (input.visitorCombo && Object.keys(input.visitorCombo).length > 0) {
+    let totalAmount = 0;
+    for (const [vType, count] of Object.entries(input.visitorCombo)) {
+      let price = TICKET_PRICES[vType as VisitorType] || 200;
+      if (customPrices && typeof customPrices[vType] === 'number') {
+        price = customPrices[vType];
+      } else if (input.pricePerTicket && input.pricePerTicket > 0) {
+        const base = input.pricePerTicket;
+        if (vType === 'Adult') price = base;
+        else if (vType === 'Child') price = Math.round(base * 0.5);
+        else if (vType === 'Senior Citizen') price = Math.round(base * 0.75);
+        else if (vType === 'Student') price = Math.round(base * 0.6);
+        else if (vType === 'Professor') price = Math.round(base * 0.9);
+        else if (vType === 'Researcher/Scientist') price = Math.round(base * 0.9);
+      }
+      totalAmount += price * count;
+    }
+    const nonZeroTypes = Object.entries(input.visitorCombo).filter(([_, count]) => count > 0);
+    const representativeType = nonZeroTypes.length > 0 ? nonZeroTypes[0][0] : 'Adult';
+    let pricePerTicket = TICKET_PRICES[representativeType as VisitorType] || 200;
+    if (customPrices && typeof customPrices[representativeType] === 'number') {
+      pricePerTicket = customPrices[representativeType];
+    } else if (input.pricePerTicket && input.pricePerTicket > 0) {
+      const base = input.pricePerTicket;
+      if (representativeType === 'Adult') pricePerTicket = base;
+      else if (representativeType === 'Child') pricePerTicket = Math.round(base * 0.5);
+      else if (representativeType === 'Senior Citizen') pricePerTicket = Math.round(base * 0.75);
+      else if (representativeType === 'Student') pricePerTicket = Math.round(base * 0.6);
+      else if (representativeType === 'Professor') pricePerTicket = Math.round(base * 0.9);
+      else if (representativeType === 'Researcher/Scientist') pricePerTicket = Math.round(base * 0.9);
+    }
+    return {
+      pricePerTicket,
+      totalAmount
+    };
+  }
+
+  let pricePerTicket = calculateTicketPrice(input.visitorType, input.pricePerTicket);
+  if (customPrices && typeof customPrices[input.visitorType] === 'number') {
+    pricePerTicket = customPrices[input.visitorType];
+  } else if (input.pricePerTicket && input.pricePerTicket > 0) {
+    const base = input.pricePerTicket;
+    if (input.visitorType === 'Adult') pricePerTicket = base;
+    else if (input.visitorType === 'Child') pricePerTicket = Math.round(base * 0.5);
+    else if (input.visitorType === 'Senior Citizen') pricePerTicket = Math.round(base * 0.75);
+    else if (input.visitorType === 'Student') pricePerTicket = Math.round(base * 0.6);
+    else if (input.visitorType === 'Professor') pricePerTicket = Math.round(base * 0.9);
+    else if (input.visitorType === 'Researcher/Scientist') pricePerTicket = Math.round(base * 0.9);
+  }
   return {
     pricePerTicket,
     totalAmount: pricePerTicket * input.numberOfTickets
@@ -130,16 +183,35 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     razorpayPaymentId: data.razorpayPaymentId ? String(data.razorpayPaymentId) : null,
     status: String(data.status || 'confirmed') as BookingStatus,
     createdAt: toDateString(data.createdAt),
-    updatedAt: toDateString(data.updatedAt)
+    updatedAt: toDateString(data.updatedAt),
+    visitorCombo: (data.visitorCombo as Record<string, number>) || null
   };
 }
 
 export async function createBooking(input: CreateBookingInput & MuseumInfo & Partial<BookingPaymentInfo> & { status?: BookingStatus }) {
   const firestore = getFirebaseFirestore();
 
+  // Fetch custom prices if booking a custom registered museum
+  let customPrices: Record<string, number> | null = null;
+  if (input.museumId?.startsWith('custom_')) {
+    try {
+      const snap = await firestore
+        .collection('museums')
+        .where('museum_id', '==', input.museumId)
+        .limit(1)
+        .get();
+      if (!snap.empty) {
+        const mDoc = snap.docs[0].data();
+        customPrices = mDoc.prices || null;
+      }
+    } catch (err) {
+      console.error('Failed to retrieve custom museum prices on createBooking:', err);
+    }
+  }
+
   // Determine price per ticket: prefer museum-specific price if provided,
   // otherwise fall back to visitor-type pricing.
-  const { pricePerTicket, totalAmount } = calculateBookingTotal(input);
+  const { pricePerTicket, totalAmount } = calculateBookingTotal(input, customPrices);
 
   const bookingId = generateBookingId();
   const now = new Date();
@@ -155,6 +227,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     timeSlot: input.timeSlot,
     numberOfTickets: input.numberOfTickets,
     visitorType: input.visitorType,
+    visitorCombo: input.visitorCombo || null,
     // Museum reference fields
     museumId: input.museumId || null,
     museumName: input.museumName || null,
@@ -173,6 +246,8 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
   };
 
   await bookingDoc.set(payload);
+  void logUserActivity(payload.userId, payload.email, 'Booking', 'booking_created', `Booking ${bookingId} created for ${payload.museumName || 'Bharat Museum'} on ${payload.visitDate} (${payload.timeSlot})`);
+
   await mirrorBookingToRealtimeDatabase({
     ...payload,
     firestoreDocumentId: bookingDoc.id
@@ -274,6 +349,7 @@ export async function updateBookingStatus(id: string, status: 'pending' | 'confi
 
   const updatedDoc = await docRef.get();
   const booking = toBookingResponse(updatedDoc.id, updatedDoc.data() as Record<string, unknown>);
+  void logUserActivity(booking.userId, booking.email, 'Booking', 'booking_updated', `Booking status for ${booking.bookingId} updated to ${status}`);
 
   return {
     success: true,

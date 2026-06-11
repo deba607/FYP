@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useLanguage } from '../../hooks/use-language';
 import { getSiteTranslation } from '../../lib/site-translations';
 
-const ORIGINAL_TEXT = 'data-bmt-original-text';
+const ORIGINAL_TEXT_PROP = '__bmt_original_text';
 const ORIGINAL_ATTR_PREFIX = 'data-bmt-original-';
 const NO_TRANSLATE_SELECTOR = '[data-bmt-no-translate]';
 const TRANSLATABLE_ATTRIBUTES = ['placeholder', 'aria-label', 'title'] as const;
@@ -29,10 +29,10 @@ function translateTextNode(node: Text, language: ReturnType<typeof useLanguage>[
     return;
   }
 
-  const original = parent.getAttribute(ORIGINAL_TEXT) || current;
+  const original = (node as any)[ORIGINAL_TEXT_PROP] || current;
   const translated = getSiteTranslation(language, original);
 
-  parent.setAttribute(ORIGINAL_TEXT, original);
+  (node as any)[ORIGINAL_TEXT_PROP] = original;
 
   if (translated !== current) {
     node.nodeValue = (node.nodeValue || '').replace(current, translated);

@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { getFirebaseFirestore } from '../config/firebaseAdmin';
 import { getFirebaseAuth } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
+import { logUserActivity } from './activityService';
+import { sendOtpEmail } from './emailService';
 
 type SignupInput = {
   name: string;
@@ -148,6 +150,7 @@ export async function signupUser(input: SignupInput) {
   }
 
   await userRef.set(user);
+  void logUserActivity(userRef.id, user.email, 'Auth', 'signup', `User registered using credentials (name: ${user.name}, phone: ${user.phone})`);
 
   const token = createToken(userRef.id, user.email);
 
@@ -168,17 +171,31 @@ export async function signupUser(input: SignupInput) {
 export async function loginUser(input: LoginInput) {
   const firestore = getFirebaseFirestore();
   const normalizedEmail = input.email.trim().toLowerCase();
+  
+  let userDoc: any = null;
+  
+  // Try querying by email first
   const userSnapshot = await firestore
     .collection('users')
     .where('email', '==', normalizedEmail)
     .limit(1)
     .get();
 
-  if (userSnapshot.empty) {
-    throw new ApiError('Invalid email or password', 401);
+  if (!userSnapshot.empty) {
+    userDoc = userSnapshot.docs[0]!;
+  } else {
+    // If not found by email, try fetching by Document ID (User ID)
+    const docRef = firestore.collection('users').doc(input.email.trim());
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      userDoc = docSnap;
+    }
   }
 
-  const userDoc = userSnapshot.docs[0]!;
+  if (!userDoc) {
+    throw new ApiError('Invalid email, user ID, or password', 401);
+  }
+
   const user = userDoc.data() as StoredUser;
 
   if (!user.password) {
@@ -188,10 +205,11 @@ export async function loginUser(input: LoginInput) {
   const isPasswordValid = await bcrypt.compare(input.password, user.password);
 
   if (!isPasswordValid) {
-    throw new ApiError('Invalid email or password', 401);
+    throw new ApiError('Invalid email, user ID, or password', 401);
   }
 
-  const token = createToken(userDoc.id, user.email);
+  const token = createToken(userDoc.id, user.email || userDoc.id);
+  void logUserActivity(userDoc.id, user.email || 'None', 'Auth', 'login', 'User logged in successfully using credentials');
 
   return {
     success: true,
@@ -258,6 +276,7 @@ export async function signupOrLoginWithGoogle(googleIdToken: string) {
       }
 
       await userRef.set(user);
+      void logUserActivity(userRef.id, user.email, 'Auth', 'signup', `User registered using Google (name: ${user.name})`);
 
       return {
         success: true,
@@ -293,6 +312,7 @@ export async function signupOrLoginWithGoogle(googleIdToken: string) {
     if (Object.keys(updatePayload).length > 1) {
       await userDoc.ref.update(updatePayload);
     }
+    void logUserActivity(userDoc.id, existing.email || email, 'Auth', 'login', 'User logged in successfully using Google');
 
     return {
       success: true,
@@ -341,6 +361,7 @@ export async function completeUserProfile(userId: string, input: CompleteProfile
   }
 
   await userRef.update(payload);
+  void logUserActivity(userId, userDoc.data()?.email || '', 'Profile', 'profile_update', `Profile updated (phone: ${payload.phone})`);
 
   const updatedDoc = await userRef.get();
   const user = updatedDoc.data() as StoredUser;
@@ -408,6 +429,7 @@ export async function completeUserProfileByEmail(email: string, input: CompleteP
       }
 
       await userRef.set(newUser);
+      void logUserActivity(userRef.id, email, 'Auth', 'signup', `User registered automatically via email flow (name: ${newUser.name})`);
       userDoc = await userRef.get();
     } else {
       const payload: Partial<StoredUser> = {
@@ -432,6 +454,7 @@ export async function completeUserProfileByEmail(email: string, input: CompleteP
       }
 
       await userDoc.ref.update(payload);
+      void logUserActivity(userDoc.id, email, 'Profile', 'profile_update', `Profile completed/updated via email flow (phone: ${payload.phone})`);
       userDoc = await userDoc.ref.get();
     }
 
@@ -455,4 +478,251 @@ export async function completeUserProfileByEmail(email: string, input: CompleteP
   } catch (error) {
     throw mapFirestoreError(error, 'Failed to save profile');
   }
+}
+
+/* ──────────────────────────────────────────────────────────
+ *  Admin-only user management helpers
+ * ────────────────────────────────────────────────────────── */
+
+export async function getAllUsers() {
+  try {
+    const firestore = getFirebaseFirestore();
+    const snapshot = await firestore
+      .collection('users')
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const users = snapshot.docs.map((doc) => {
+      const data = doc.data() as StoredUser;
+      // Never return password hashes to the client
+      const { password: _pw, ...safe } = data;
+      return {
+        id: doc.id,
+        ...safe,
+        createdAt: data.createdAt instanceof Date
+          ? data.createdAt.toISOString()
+          : (data.createdAt as any)?.toDate?.()?.toISOString?.() ?? String(data.createdAt ?? ''),
+        updatedAt: data.updatedAt instanceof Date
+          ? data.updatedAt.toISOString()
+          : (data.updatedAt as any)?.toDate?.()?.toISOString?.() ?? String(data.updatedAt ?? ''),
+      };
+    });
+
+    return { success: true, users };
+  } catch (error) {
+    throw mapFirestoreError(error, 'Unable to fetch users');
+  }
+}
+
+type AdminUserUpdate = {
+  role?: 'user' | 'admin';
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  dateOfBirth?: string;
+};
+
+export async function updateUserByAdmin(userId: string, input: AdminUserUpdate) {
+  if (!userId) {
+    throw new ApiError('User ID is required', 400);
+  }
+
+  const allowedFields: (keyof AdminUserUpdate)[] = ['role', 'name', 'email', 'phone', 'address', 'dateOfBirth'];
+  const payload: Record<string, unknown> = { updatedAt: new Date() };
+
+  for (const key of allowedFields) {
+    if (input[key] !== undefined) {
+      payload[key] = typeof input[key] === 'string' ? (input[key] as string).trim() : input[key];
+    }
+  }
+
+  if (Object.keys(payload).length <= 1) {
+    throw new ApiError('No valid fields provided for update', 400);
+  }
+
+  try {
+    const firestore = getFirebaseFirestore();
+    const userRef = firestore.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      throw new ApiError('User not found', 404);
+    }
+
+    await userRef.update(payload);
+    const updated = (await userRef.get()).data() as StoredUser;
+    const { password: _pw, ...safe } = updated;
+
+    return {
+      success: true,
+      message: 'User updated successfully',
+      user: { id: userId, ...safe },
+    };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw mapFirestoreError(error, 'Unable to update user');
+  }
+}
+
+export async function deleteUserByAdmin(userId: string) {
+  if (!userId) {
+    throw new ApiError('User ID is required', 400);
+  }
+
+  try {
+    const firestore = getFirebaseFirestore();
+    const userRef = firestore.collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      throw new ApiError('User not found', 404);
+    }
+
+    await userRef.delete();
+
+    return { success: true, message: 'User deleted successfully' };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw mapFirestoreError(error, 'Unable to delete user');
+  }
+}
+
+export async function sendOtp(emailOrId: string, purpose: 'registration' | 'forgot_password') {
+  const firestore = getFirebaseFirestore();
+  let email = emailOrId.trim();
+
+  // If emailOrId is a user ID, look up the email
+  let userDocId = '';
+  if (!email.includes('@')) {
+    const userDoc = await firestore.collection('users').doc(email).get();
+    if (!userDoc.exists) {
+      throw new ApiError('No user found with this User ID.', 404);
+    }
+    const userData = userDoc.data();
+    email = userData?.email || '';
+    userDocId = userDoc.id;
+    if (!email) {
+      throw new ApiError('User ID has no associated email address.', 400);
+    }
+  } else {
+    // Check if user exists for forgot_password
+    if (purpose === 'forgot_password') {
+      const userSnapshot = await firestore
+        .collection('users')
+        .where('email', '==', email.toLowerCase())
+        .limit(1)
+        .get();
+      if (userSnapshot.empty) {
+        throw new ApiError('No account found with this email address.', 404);
+      }
+      userDocId = userSnapshot.docs[0].id;
+    }
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+  // Save to otps collection
+  await firestore.collection('otps').doc(email.toLowerCase()).set({
+    email: email.toLowerCase(),
+    otp,
+    expiresAt,
+    userDocId
+  });
+
+  // Send the email
+  await sendOtpEmail(email, otp, purpose);
+
+  return {
+    success: true,
+    message: 'Verification code sent successfully.',
+    email
+  };
+}
+
+export async function verifyOtp(emailOrId: string, otp: string) {
+  const firestore = getFirebaseFirestore();
+  let email = emailOrId.trim().toLowerCase();
+
+  // Resolve user ID to email if needed
+  if (!email.includes('@')) {
+    const userDoc = await firestore.collection('users').doc(emailOrId.trim()).get();
+    if (userDoc.exists) {
+      email = (userDoc.data()?.email || '').toLowerCase();
+    }
+  }
+
+  const otpDoc = await firestore.collection('otps').doc(email).get();
+  if (!otpDoc.exists) {
+    throw new ApiError('No verification code request found for this email.', 400);
+  }
+
+  const data = otpDoc.data();
+  if (data?.otp !== otp.trim()) {
+    throw new ApiError('Invalid verification code.', 400);
+  }
+
+  const expiresAt = data.expiresAt?.toDate?.() || new Date(data.expiresAt);
+  if (new Date() > expiresAt) {
+    throw new ApiError('Verification code has expired.', 400);
+  }
+
+  return {
+    success: true,
+    message: 'Code verified successfully.'
+  };
+}
+
+export async function resetPasswordWithOtp(emailOrId: string, otp: string, passwordInput: string) {
+  if (!passwordInput || passwordInput.length < 8) {
+    throw new ApiError('Password must be at least 8 characters long.', 400);
+  }
+
+  const firestore = getFirebaseFirestore();
+  let email = emailOrId.trim().toLowerCase();
+  let userDocId = '';
+
+  // Resolve user ID to email and get user doc ID
+  if (!email.includes('@')) {
+    const userDoc = await firestore.collection('users').doc(emailOrId.trim()).get();
+    if (!userDoc.exists) {
+      throw new ApiError('User not found.', 404);
+    }
+    email = (userDoc.data()?.email || '').toLowerCase();
+    userDocId = userDoc.id;
+  } else {
+    const userSnapshot = await firestore
+      .collection('users')
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+    if (userSnapshot.empty) {
+      throw new ApiError('User not found.', 404);
+    }
+    userDocId = userSnapshot.docs[0].id;
+  }
+
+  // Verify OTP
+  await verifyOtp(email, otp);
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(passwordInput, 10);
+
+  // Update password in Firestore
+  await firestore.collection('users').doc(userDocId).update({
+    password: hashedPassword,
+    updatedAt: new Date()
+  });
+
+  // Delete the OTP document
+  await firestore.collection('otps').doc(email).delete();
+
+  void logUserActivity(userDocId, email, 'Auth', 'password_reset_otp', 'Password reset successfully using OTP verification');
+
+  return {
+    success: true,
+    message: 'Password has been reset successfully.'
+  };
 }

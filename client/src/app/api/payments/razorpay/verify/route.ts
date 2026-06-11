@@ -4,6 +4,7 @@ import { createBooking, calculateBookingTotal } from '../../../../../lib/service
 import { getOptionalFirebaseUser } from '../../../../../lib/middleware/auth';
 import { ApiError, toErrorMessage } from '../../../../../lib/utils/errors';
 import { jsonError, jsonSuccess } from '../../../../../lib/utils/apiResponse';
+import { logUserActivity } from '../../../../../lib/services/activityService';
 
 export const runtime = 'nodejs';
 
@@ -40,8 +41,18 @@ export async function POST(req: NextRequest) {
       throw new ApiError('Missing required booking fields', 400);
     }
 
-    if (!ALLOWED_VISITOR_TYPES.has(String(booking.visitorType || ''))) {
-      throw new ApiError('Invalid visitor type', 400);
+    const visitorCombo = booking.visitorCombo as Record<string, number> | undefined;
+
+    if (visitorCombo && Object.keys(visitorCombo).length > 0) {
+      for (const vType of Object.keys(visitorCombo)) {
+        if (!ALLOWED_VISITOR_TYPES.has(vType)) {
+          throw new ApiError(`Invalid visitor type: ${vType}`, 400);
+        }
+      }
+    } else {
+      if (!ALLOWED_VISITOR_TYPES.has(String(booking.visitorType || ''))) {
+        throw new ApiError('Invalid visitor type', 400);
+      }
     }
 
     if (!body?.razorpayOrderId || !body?.razorpayPaymentId || !body?.razorpaySignature) {
@@ -65,7 +76,8 @@ export async function POST(req: NextRequest) {
       museumId: booking.museumId,
       museumName: booking.museumName,
       museumLocation: booking.museumLocation,
-      museumCategory: booking.museumCategory
+      museumCategory: booking.museumCategory,
+      visitorCombo
     });
 
     if (totalAmount <= 0) {
@@ -83,6 +95,14 @@ export async function POST(req: NextRequest) {
       razorpaySignature: body.razorpaySignature,
       status: 'confirmed'
     });
+
+    void logUserActivity(
+      user?.uid || booking.userId || null,
+      booking.email,
+      'Payment',
+      'payment_verified',
+      `Verified Razorpay payment for booking ${result.booking.bookingId} (${booking.museumName || 'Bharat Museum'}). Amount: INR ${totalAmount}`
+    );
 
     return jsonSuccess(
       {

@@ -1,6 +1,6 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from '../mvpblocks/theme-provider';
 import {
@@ -28,20 +28,32 @@ import {
   User,
   Ticket,
   Home,
+  Landmark,
 } from 'lucide-react';
 
 const menuItems = [
   { title: 'Dashboard', icon: LayoutDashboard, href: '#dashboard' },
   { title: 'Bookings', icon: Ticket, href: '#bookings' },
+  { title: 'Museums', icon: Landmark, href: '#museums' },
+  { title: 'User Management', icon: Users, href: '#users' },
   { title: 'Analytics', icon: BarChart3, href: '#analytics' },
   { title: 'Visitors', icon: Users, href: '#visitors' },
   { title: 'Activity', icon: Activity, href: '#activity' },
-  { title: 'Database', icon: Database, href: '#database' },
-  { title: 'Security', icon: Shield, href: '#security' },
 ];
 
 export const AdminSidebar = memo(() => {
   const { theme, setTheme } = useTheme();
+  const [activeHash, setActiveHash] = useState('#dashboard');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleHashChange = () => {
+      setActiveHash(window.location.hash || '#dashboard');
+    };
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   return (
     <Sidebar collapsible="icon">
@@ -49,7 +61,7 @@ export const AdminSidebar = memo(() => {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link prefetch={false} href={'#dashboard' as any}>
+              <a href="#dashboard">
                 <div className="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
@@ -57,7 +69,7 @@ export const AdminSidebar = memo(() => {
                   <span className="truncate font-semibold">Bharat Museum</span>
                   <span className="truncate text-xs">Admin Dashboard</span>
                 </div>
-              </Link>
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -72,11 +84,19 @@ export const AdminSidebar = memo(() => {
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={item.href === '#dashboard'}>
-                      <Link prefetch={false} href={item.href as any}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={item.href === activeHash}
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          window.location.hash = item.href;
+                        }
+                      }}
+                    >
+                      <a href={item.href}>
                         <Icon />
                         <span>{item.title}</span>
-                      </Link>
+                      </a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

@@ -32,7 +32,7 @@ export type CreateBookingInput = {
   visitDate: string;
   timeSlot: string;
   numberOfTickets: number;
-  visitorType: 'Adult' | 'Child' | 'Senior Citizen' | 'Student' | 'Professor' | 'Researcher/Scientist';
+  visitorType: string;
   userId?: string;
   museumId?: string;
   museumName?: string;
@@ -40,6 +40,7 @@ export type CreateBookingInput = {
   museumCategory?: string;
   pricePerTicket?: number;
   totalPrice?: number;
+  visitorCombo?: Record<string, number>;
 };
 
 export type BookingResponse = {
@@ -236,4 +237,25 @@ export async function uploadProfileImage(file: File) {
     publicId: string;
     message: string;
   };
+}
+
+export async function sendOtp(email: string, purpose: 'registration' | 'forgot_password') {
+  return apiFetch<{ success: boolean; message: string; email: string }>(`${API_BASE_URL}/auth/send-otp`, {
+    method: 'POST',
+    body: JSON.stringify({ email, purpose })
+  });
+}
+
+export async function verifyOtp(email: string, otp: string) {
+  return apiFetch<{ success: boolean; message: string }>(`${API_BASE_URL}/auth/verify-otp`, {
+    method: 'POST',
+    body: JSON.stringify({ email, otp })
+  });
+}
+
+export async function resetPassword(email: string, otp: string, password: string) {
+  return apiFetch<{ success: boolean; message: string }>(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, password })
+  });
 }

@@ -14,7 +14,17 @@ export type BookingInfo = {
   museumLocation?: string | null;
   museumCategory?: string | null;
   pricePerTicket?: number;
+  visitorCombo?: Record<string, number> | null;
 };
+
+const TICKET_PRICES = {
+  Adult: 200,
+  Child: 100,
+  'Senior Citizen': 150,
+  Student: 120,
+  Professor: 180,
+  'Researcher/Scientist': 180
+} as const;
 
 let transporterPromise: Promise<nodemailer.Transporter> | null = null;
 
@@ -334,12 +344,27 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>${booking.visitorType} Ticket</td>
-              <td style="text-align: center;">${booking.numberOfTickets}</td>
-              <td style="text-align: right;">₹${booking.pricePerTicket ?? 200}</td>
-              <td style="text-align: right;">₹${(booking.pricePerTicket ?? 200) * booking.numberOfTickets}</td>
-            </tr>
+            ${booking.visitorCombo && Object.keys(booking.visitorCombo).length > 0 
+              ? Object.entries(booking.visitorCombo)
+                  .filter(([_, count]) => count > 0)
+                  .map(([vType, count]) => {
+                    const price = TICKET_PRICES[vType as keyof typeof TICKET_PRICES] || booking.pricePerTicket || 200;
+                    return `
+                    <tr>
+                      <td>${vType} Ticket</td>
+                      <td style="text-align: center;">${count}</td>
+                      <td style="text-align: right;">₹${price}</td>
+                      <td style="text-align: right;">₹${price * count}</td>
+                    </tr>`;
+                  }).join('')
+              : `
+              <tr>
+                <td>${booking.visitorType} Ticket</td>
+                <td style="text-align: center;">${booking.numberOfTickets}</td>
+                <td style="text-align: right;">₹${booking.pricePerTicket ?? 200}</td>
+                <td style="text-align: right;">₹${(booking.pricePerTicket ?? 200) * booking.numberOfTickets}</td>
+              </tr>`
+            }
             <tr class="receipt-total-row">
               <td colspan="2">Amount Paid</td>
               <td colspan="2" style="text-align: right;">₹${booking.totalAmount}</td>
@@ -391,5 +416,123 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
     }
   } catch (error) {
     console.error('Failed to send booking confirmation email:', (error as Error).message);
+  }
+}
+
+export async function sendOtpEmail(email: string, otp: string, purpose: 'registration' | 'forgot_password') {
+  try {
+    const transporter = await getTransporter();
+    const fromEmail = process.env.SMTP_FROM || process.env.GMAIL_USER || 'no-reply@bharatmuseums.gov.in';
+    const toEmail = email.trim();
+
+    if (!toEmail) {
+      throw new Error('Recipient email address is required.');
+    }
+
+    const subject = purpose === 'registration' 
+      ? 'Verification Code for Museum Supervisor Registration' 
+      : 'Reset Password Verification Code - Bharat Museum';
+
+    const purposeText = purpose === 'registration'
+      ? 'verifying your email for museum supervisor registration'
+      : 'resetting your account password';
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verification Code</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #1f2937;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 500px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    .header {
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: #059669;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .otp-code {
+      font-size: 32px;
+      font-weight: 700;
+      color: #059669;
+      text-align: center;
+      padding: 15px;
+      background-color: #ecfdf5;
+      border: 1px dashed #10b981;
+      border-radius: 8px;
+      letter-spacing: 4px;
+      margin: 25px 0;
+    }
+    .text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #4b5563;
+      margin-bottom: 15px;
+    }
+    .footer {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 20px;
+      margin-top: 30px;
+      font-size: 12px;
+      color: #9ca3af;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">Bharat Museum</div>
+    </div>
+    <div class="text">Hello,</div>
+    <div class="text">You requested a verification code for <strong>${purposeText}</strong>.</div>
+    <div class="text">Please enter the following one-time password (OTP) code to verify your identity:</div>
+    <div class="otp-code">${otp}</div>
+    <div class="text">This OTP code is valid for 5 minutes. If you did not request this, you can safely ignore this email.</div>
+    <div class="footer">
+      &copy; 2026 Bharat Museum Tickets. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    const mailOptions = {
+      from: `"Bharat Museum Tickets" <${fromEmail}>`,
+      to: toEmail,
+      subject,
+      text: `Your verification code is: ${otp}\n\nThis code is valid for 5 minutes.`,
+      html: htmlContent
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Verification OTP email sent to ${toEmail}. Message ID: ${info.messageId}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send verification OTP email:', (error as Error).message);
+    throw error;
   }
 }

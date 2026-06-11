@@ -13,6 +13,7 @@ import { useLanguage } from '../../hooks/use-language';
 import { LanguageSelector } from '../ui/language-selector';
 
 import { ModeToggle } from './mode-toggle'
+import { trackClientEvent } from '../ui/activity-tracker';
 
 interface NavItem {
   name: string;
@@ -109,6 +110,13 @@ export default function Header2() {
   }, [pathname]);
 
   const handleSignOut = async () => {
+    // Log user sign-out action before wiping local storage
+    if (signedInUser?.email) {
+      trackClientEvent('Auth', 'logout', `User signed out: ${signedInUser.email}`);
+    } else {
+      trackClientEvent('Auth', 'logout', 'Visitor logged out');
+    }
+
     try {
       await signOut(getFirebaseClientAuth());
     } catch {
@@ -128,7 +136,17 @@ export default function Header2() {
     signedInUser?.email?.trim()?.charAt(0)?.toUpperCase() ||
     'U';
   const isAdmin = signedInUser?.role === 'admin';
+  const isMuseum = signedInUser?.role === 'admin' || signedInUser?.role === 'museum';
+  const isController = signedInUser?.role === 'admin' || signedInUser?.role === 'museum' || signedInUser?.role === 'controller';
   const visibleNavItems = navItems;
+
+  const currentDashboard = pathname.startsWith('/admin')
+    ? '/admin'
+    : pathname.startsWith('/museum-dashboard')
+    ? '/museum-dashboard'
+    : pathname.startsWith('/controller-dashboard')
+    ? '/controller-dashboard'
+    : '';
 
   const containerVariants = {
     hidden: { opacity: 0, y: -20 },
@@ -262,14 +280,31 @@ export default function Header2() {
 
               <LanguageSelector compact />
 
-              {isAdmin ? (
-                <Link
-                  href="/admin"
-                  className="border-border bg-background/80 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-2.5 py-2 text-sm font-medium"
-                >
-                  {translate(language, 'nav.admin')}
-                </Link>
-              ) : null}
+              {(isAdmin || isMuseum || isController) && (
+                <div className="relative">
+                  <select
+                    aria-label="Dashboard Redirect Select"
+                    value={currentDashboard}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        window.location.href = e.target.value;
+                      }
+                    }}
+                    className="border-border bg-background/90 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-3 py-2 text-sm font-semibold cursor-pointer outline-hidden focus:ring-2 focus:ring-emerald-500/20"
+                  >
+                    {!currentDashboard && <option value="" disabled className="text-muted-foreground">Select Dashboard</option>}
+                    {isAdmin && (
+                      <option value="/admin" className="text-foreground bg-background">Admin Dashboard</option>
+                    )}
+                    {isMuseum && (
+                      <option value="/museum-dashboard" className="text-foreground bg-background">Museum Dashboard</option>
+                    )}
+                    {isController && (
+                      <option value="/controller-dashboard" className="text-foreground bg-background">Controller Dashboard</option>
+                    )}
+                  </select>
+                </div>
+              )}
 
               {/* <Link
                 to="/login"
@@ -312,10 +347,16 @@ export default function Header2() {
                       <p className="wrap-break-word"><span className="text-muted-foreground">{translate(language, 'profile.address')}</span> {signedInUser.address || '-'}</p>
                     </div>
                     <div className="border-border mt-3 flex items-center justify-between border-t pt-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <Link href="/profile" className="text-sm font-medium underline">{translate(language, 'auth.profile')}</Link>
                         {isAdmin ? (
                           <Link href="/admin" className="text-sm font-medium underline">{translate(language, 'nav.admin')}</Link>
+                        ) : null}
+                        {isMuseum ? (
+                          <Link href="/museum-dashboard" className="text-sm font-medium underline">Museum</Link>
+                        ) : null}
+                        {isController ? (
+                          <Link href="/controller-dashboard" className="text-sm font-medium underline">Controller</Link>
                         ) : null}
                       </div>
                       <button
@@ -431,6 +472,24 @@ export default function Header2() {
                           onClick={() => setIsMobileMenuOpen(false)}
                         >
                           {translate(language, 'nav.admin')}
+                        </Link>
+                      ) : null}
+                      {isMuseum ? (
+                        <Link
+                          href="/museum-dashboard"
+                          className="bg-muted text-foreground block w-full rounded-lg py-3 text-center font-medium"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          Museum Dashboard
+                        </Link>
+                      ) : null}
+                      {isController ? (
+                        <Link
+                          href="/controller-dashboard"
+                          className="bg-muted text-foreground block w-full rounded-lg py-3 text-center font-medium"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          Controller Dashboard
                         </Link>
                       ) : null}
                       <button

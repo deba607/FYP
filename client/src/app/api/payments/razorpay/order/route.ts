@@ -39,8 +39,18 @@ export async function POST(req: NextRequest) {
       throw new ApiError('Missing required booking fields', 400);
     }
 
-    if (!ALLOWED_VISITOR_TYPES.has(String(body.visitorType || ''))) {
-      throw new ApiError('Invalid visitor type', 400);
+    const visitorCombo = body.visitorCombo as Record<string, number> | undefined;
+
+    if (visitorCombo && Object.keys(visitorCombo).length > 0) {
+      for (const vType of Object.keys(visitorCombo)) {
+        if (!ALLOWED_VISITOR_TYPES.has(vType)) {
+          throw new ApiError(`Invalid visitor type: ${vType}`, 400);
+        }
+      }
+    } else {
+      if (!ALLOWED_VISITOR_TYPES.has(String(body.visitorType || ''))) {
+        throw new ApiError('Invalid visitor type', 400);
+      }
     }
 
     const numberOfTickets = Number(body.numberOfTickets || 0);
@@ -55,7 +65,8 @@ export async function POST(req: NextRequest) {
       museumId: body.museumId,
       museumName: body.museumName,
       museumLocation: body.museumLocation,
-      museumCategory: body.museumCategory
+      museumCategory: body.museumCategory,
+      visitorCombo
     });
 
     if (totalAmount <= 0) {

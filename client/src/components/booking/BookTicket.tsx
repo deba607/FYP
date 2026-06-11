@@ -7,7 +7,7 @@ import { buttonVariants } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin } from 'lucide-react';
+import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin, Plus, Minus } from 'lucide-react';
 import Listbox from '../ui/listbox';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
@@ -28,6 +28,17 @@ const VISITOR_TYPES = [
   { value: 'Child', label: 'Children', price: 100 },
   { value: 'Adult', label: 'Adult', price: 200 }
 ] as const;
+
+const VISITOR_CATEGORIES = [
+  { name: 'Adult', price: 200, emoji: '🧑' },
+  { name: 'Child', price: 100, emoji: '👶' },
+  { name: 'Senior Citizen', price: 150, emoji: '👴' },
+  { name: 'Student', price: 120, emoji: '🎓' },
+  { name: 'Professor', price: 180, emoji: '📚' },
+  { name: 'Researcher/Scientist', price: 180, emoji: '🔬' }
+];
+
+const MAX_TICKETS = 6;
 
 function readBookingProfile() {
   if (typeof window === 'undefined') {
@@ -90,10 +101,9 @@ function BookTicket() {
   const [selectedMuseumId, setSelectedMuseumId] = useState(MUSEUMS[0].museum_id);
   const [museumQuery, setMuseumQuery] = useState('');
   const [museumSearchOpen, setMuseumSearchOpen] = useState(false);
-  const [visitorType, setVisitorType] = useState<(typeof VISITOR_TYPES)[number]['value']>('Student');
+  const [visitorCombo, setVisitorCombo] = useState<Record<string, number>>({});
   const [date, setDate] = useState('');
   const [time, setTime] = useState(TIME_SLOTS[0]);
-  const [tickets, setTickets] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [success, setSuccess] = useState<null | { id: string; summary: string }>(null);
@@ -147,20 +157,61 @@ function BookTicket() {
       .slice(0, 80);
   }, [museumQuery, uniqueMuseums]);
 
-  const selectedVisitor = useMemo(() => {
-    return VISITOR_TYPES.find((item) => item.value === visitorType) || VISITOR_TYPES[0];
-  }, [visitorType]);
-
   useEffect(() => {
     if (selectedMuseum && !museumSearchOpen) {
       setMuseumQuery(`${selectedMuseum.name} — ${selectedMuseum.location}`);
     }
   }, [museumSearchOpen, selectedMuseum]);
 
-  const total = useMemo(
-    () => tickets * (selectedVisitor?.price || selectedMuseum?.price || 200),
-    [tickets, selectedMuseum, selectedVisitor]
-  );
+  const tickets = useMemo(() => {
+    return Object.values(visitorCombo).reduce((a, b) => a + b, 0);
+  }, [visitorCombo]);
+
+  const visitorType = useMemo(() => {
+    const parts = Object.entries(visitorCombo)
+      .filter(([, count]) => count > 0)
+      .map(([type, count]) => `${count}× ${type}`);
+    return parts.join(', ') || 'Adult';
+  }, [visitorCombo]);
+
+  const visitorCategories = useMemo(() => {
+    const defaultCategories = [
+      { name: 'Adult', price: 200, emoji: '🧑' },
+      { name: 'Child', price: 100, emoji: '👶' },
+      { name: 'Senior Citizen', price: 150, emoji: '👴' },
+      { name: 'Student', price: 120, emoji: '🎓' },
+      { name: 'Professor', price: 180, emoji: '📚' },
+      { name: 'Researcher/Scientist', price: 180, emoji: '🔬' }
+    ];
+
+    if (!selectedMuseum) return defaultCategories;
+
+    // Check if the museum has custom prices object
+    if (selectedMuseum.prices && typeof selectedMuseum.prices === 'object') {
+      return defaultCategories.map(cat => ({
+        ...cat,
+        price: Number(selectedMuseum.prices[cat.name] ?? selectedMuseum.prices[cat.name.toLowerCase()] ?? cat.price)
+      }));
+    }
+
+    // Fallback if the museum only has a general base 'price'
+    const basePrice = Number(selectedMuseum.price ?? 200);
+    return [
+      { name: 'Adult', price: basePrice, emoji: '🧑' },
+      { name: 'Child', price: Math.round(basePrice * 0.5), emoji: '👶' },
+      { name: 'Senior Citizen', price: Math.round(basePrice * 0.75), emoji: '👴' },
+      { name: 'Student', price: Math.round(basePrice * 0.6), emoji: '🎓' },
+      { name: 'Professor', price: Math.round(basePrice * 0.9), emoji: '📚' },
+      { name: 'Researcher/Scientist', price: Math.round(basePrice * 0.9), emoji: '🔬' }
+    ];
+  }, [selectedMuseum]);
+
+  const total = useMemo(() => {
+    return Object.entries(visitorCombo).reduce((sum, [type, count]) => {
+      const price = visitorCategories.find((v) => v.name === type)?.price || 200;
+      return sum + price * count;
+    }, 0);
+  }, [visitorCombo, visitorCategories]);
 
   const validate = () => {
     const e: string[] = [];
@@ -174,7 +225,9 @@ function BookTicket() {
       today.setHours(0, 0, 0, 0);
       if (d < today) e.push('Date cannot be in the past.');
     }
-    if (tickets < 1 || tickets > 10) e.push('Please select between 1 and 10 tickets.');
+    if (tickets < 1 || tickets > MAX_TICKETS) {
+      e.push(`Please select between 1 and ${MAX_TICKETS} tickets.`);
+    }
     setErrors(e);
     return e.length === 0;
   };
@@ -189,7 +242,7 @@ function BookTicket() {
     today.setHours(0, 0, 0, 0);
     return d < today;
   })();
-  const ticketsInvalid = tickets < 1 || tickets > 10;
+  const ticketsInvalid = tickets < 1 || tickets > MAX_TICKETS;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,12 +259,13 @@ function BookTicket() {
         timeSlot: time,
         numberOfTickets: tickets,
         visitorType: visitorType,
+        visitorCombo: visitorCombo,
         museumId: selectedMuseum.museum_id,
         museumName: selectedMuseum.name,
         museumLocation: selectedMuseum.location,
         museumCategory: selectedMuseum.category,
-        pricePerTicket: selectedVisitor.price,
-        totalPrice: tickets * selectedVisitor.price
+        pricePerTicket: total / (tickets || 1),
+        totalPrice: total
       };
 
       const orderResponse = await createRazorpayOrder(bookingPayload);
@@ -286,8 +340,7 @@ function BookTicket() {
             setDate('');
             setTime(TIME_SLOTS[0]);
             setSelectedMuseumId(uniqueMuseums[0]?.museum_id || MUSEUMS[0].museum_id);
-            setVisitorType('Student');
-            setTickets(1);
+            setVisitorCombo({});
           } catch (paymentError) {
             setErrors([(paymentError as Error).message || 'Payment verification failed. Please contact support.']);
           } finally {
@@ -306,13 +359,14 @@ function BookTicket() {
   // Fetch museums list from public JSON (optional). Fall back to embedded list.
   React.useEffect(() => {
     let mounted = true;
-    fetch('/museums.json')
+    fetch('/api/museums')
       .then((r) => {
-        if (!r.ok) throw new Error('No museums.json');
+        if (!r.ok) throw new Error('No museums API');
         return r.json();
       })
-      .then((data) => {
+      .then((payload) => {
         if (!mounted) return;
+        const data = payload?.museums;
         if (Array.isArray(data) && data.length > 0) {
           const dedupedData = data.filter((museum: any, index: number, self: any[]) =>
             index === self.findIndex((entry) => entry.museum_id === museum.museum_id)
@@ -449,15 +503,117 @@ function BookTicket() {
           </div>
         </div>
 
-        <div>
+        <div data-bmt-no-translate>
           <Label>{translate(language, 'booking.visitorCategory')}</Label>
-          <div>
-            <div className="mt-1">
-              <Listbox
-                items={VISITOR_TYPES.map((type) => ({ value: type.value, label: `${type.label} (₹${type.price})` }))}
-                value={visitorType}
-                onChange={(v) => setVisitorType(v as (typeof VISITOR_TYPES)[number]['value'])}
-              />
+          <div
+            className="mt-1 w-full rounded-lg border bg-[#1a1a2e] p-4 text-[#e0e0e0] shadow-md border-[#2a2a3e]"
+            style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+          >
+            {/* Header */}
+            <div className="mb-3 flex items-center gap-2 border-b pb-2 border-[#2a2a3e]">
+              <Users className="h-4 w-4 text-blue-400" />
+              <span className="text-sm font-semibold text-white">Select Visitors</span>
+              <span className="ml-auto text-xs text-[#8888aa]">
+                {tickets}/{MAX_TICKETS} tickets
+              </span>
+            </div>
+
+            {/* Category rows */}
+            <div className="grid gap-3">
+              {visitorCategories.map((cat) => {
+                const count = visitorCombo[cat.name] || 0;
+                const canAdd = tickets < MAX_TICKETS;
+                return (
+                  <div
+                    key={cat.name}
+                    className="flex items-center justify-between border-b pb-2 last:border-b-0 last:pb-0 border-[#1e1e35]"
+                  >
+                    {/* Label + price */}
+                    <div className="flex-1">
+                      <div className={cn("text-sm transition-colors", count > 0 ? "text-white font-medium" : "text-[#8888aa]")}>
+                        {cat.emoji} {cat.name}
+                      </div>
+                      <div className="text-xs text-[#666688]">₹{cat.price}/ticket</div>
+                    </div>
+
+                    {/* +/- controls */}
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVisitorCombo((prev) => {
+                            const curr = prev[cat.name] || 0;
+                            if (curr <= 0) return prev;
+                            const next = { ...prev, [cat.name]: curr - 1 };
+                            if (next[cat.name] === 0) delete next[cat.name];
+                            return next;
+                          });
+                        }}
+                        disabled={loading || count === 0}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: count > 0 ? '#2a2a4e' : '#1e1e35',
+                          border: '1px solid #3a3a5e',
+                          borderRadius: '6px 0 0 6px',
+                          color: count > 0 ? '#ff6b6b' : '#444',
+                          cursor: count > 0 && !loading ? 'pointer' : 'default',
+                          fontSize: '16px',
+                          fontWeight: 700,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <div
+                        style={{
+                          width: '36px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: '#16162a',
+                          borderTop: '1px solid #3a3a5e',
+                          borderBottom: '1px solid #3a3a5e',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: count > 0 ? '#ffffff' : '#555',
+                        }}
+                      >
+                        {count}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (tickets >= MAX_TICKETS) return;
+                          setVisitorCombo((prev) => ({ ...prev, [cat.name]: (prev[cat.name] || 0) + 1 }));
+                        }}
+                        disabled={loading || !canAdd}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: canAdd ? '#2a2a4e' : '#1e1e35',
+                          border: '1px solid #3a3a5e',
+                          borderRadius: '0 6px 6px 0',
+                          color: canAdd ? '#60a5fa' : '#444',
+                          cursor: canAdd && !loading ? 'pointer' : 'default',
+                          fontSize: '16px',
+                          fontWeight: 700,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -486,34 +642,25 @@ function BookTicket() {
           </div>
         </div>
 
-        <div>
-          <Label>{translate(language, 'booking.ticketCount')}</Label>
-          <div className="relative">
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Users className="h-4 w-4" /></div>
-            <Input aria-invalid={ticketsInvalid} onBlur={() => setTouchedTickets(true)} className="pl-10" value={tickets} onChange={(e) => setTickets(Math.max(1, Math.min(10, Number(e.target.value) || 1)))} type="number" min={1} max={10} />
-            {touchedTickets && ticketsInvalid && <div className="mt-1 text-xs text-red-600">Select between 1 and 10 tickets.</div>}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-2">
-          <div>
-            <div className="text-sm text-muted-foreground">{translate(language, 'booking.pricePerTicket')}</div>
-            <div className="text-lg font-semibold">₹{selectedVisitor?.price ?? 200}</div>
-          </div>
-
+        <div className="flex items-center justify-end pt-2">
           <div className="text-right">
             <div className="text-sm text-muted-foreground">{translate(language, 'booking.total')}</div>
-            <div className="text-lg font-semibold">₹{total}</div>
+            <div className="text-xl font-semibold">₹{total}</div>
           </div>
         </div>
 
         <div className="mt-2 flex justify-end">
           <button
             type="submit"
-            className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2')}
-            disabled={loading}
+            className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2 w-full sm:w-auto')}
+            disabled={loading || tickets === 0}
           >
-            {loading ? translate(language, 'booking.openingPayment') : translate(language, 'booking.pay')}
+            {loading 
+              ? translate(language, 'booking.openingPayment') 
+              : tickets === 0 
+                ? 'Select at least 1 visitor' 
+                : translate(language, 'booking.pay')
+            }
           </button>
         </div>
       </form>
