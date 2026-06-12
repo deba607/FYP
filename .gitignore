@@ -6,6 +6,7 @@ client/.next/
 client/out/
 
 # Local env files
+client/.env*
 client/.env.local
 client/.env*.local
 
