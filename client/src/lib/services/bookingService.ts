@@ -190,6 +190,7 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
 
 export async function createBooking(input: CreateBookingInput & MuseumInfo & Partial<BookingPaymentInfo> & { status?: BookingStatus }) {
   const firestore = getFirebaseFirestore();
+  const database = getFirebaseRealtimeDatabase();
 
   // Fetch custom prices if booking a custom registered museum
   let customPrices: Record<string, number> | null = null;
@@ -215,7 +216,6 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
 
   const bookingId = generateBookingId();
   const now = new Date();
-  const bookingDoc = firestore.collection('bookings').doc();
 
   const payload = {
     bookingId,
@@ -228,7 +228,6 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     numberOfTickets: input.numberOfTickets,
     visitorType: input.visitorType,
     visitorCombo: input.visitorCombo || null,
-    // Museum reference fields
     museumId: input.museumId || null,
     museumName: input.museumName || null,
     museumLocation: input.museumLocation || null,
@@ -241,18 +240,21 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     razorpayPaymentId: input.razorpayPaymentId || null,
     razorpaySignature: input.razorpaySignature || null,
     status: input.status || 'confirmed' as BookingStatus,
-    createdAt: now,
-    updatedAt: now
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString()
   };
 
-  await bookingDoc.set(payload);
+  const updates: Record<string, any> = {
+    [`bookings/${bookingId}`]: payload
+  };
+  if (payload.userId) {
+    updates[`bookingsByUser/${payload.userId}/${bookingId}`] = payload;
+  }
+  await database.ref().update(updates);
+
   void logUserActivity(payload.userId, payload.email, 'Booking', 'booking_created', `Booking ${bookingId} created for ${payload.museumName || 'Bharat Museum'} on ${payload.visitDate} (${payload.timeSlot})`);
 
-  await mirrorBookingToRealtimeDatabase({
-    ...payload,
-    firestoreDocumentId: bookingDoc.id
-  });
-  const booking = toBookingResponse(bookingDoc.id, payload);
+  const booking = toBookingResponse(bookingId, payload);
 
   // Send booking confirmation email asynchronously (non-blocking)
   sendBookingConfirmationEmail(booking).catch((err) => {
@@ -267,29 +269,33 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
 }
 
 export async function getAllBookings() {
-  const firestore = getFirebaseFirestore();
-  const snapshot = await firestore.collection('bookings').get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref('bookings').once('value');
 
-  const bookings = snapshot.docs
-    .map((doc) => toBookingResponse(doc.id, doc.data()))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const list: any[] = [];
+  snapshot.forEach((child) => {
+    list.push(toBookingResponse(child.key || '', child.val()));
+  });
+
+  // Sort descending
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return {
     success: true,
-    count: bookings.length,
-    bookings
+    count: list.length,
+    bookings: list
   };
 }
 
 export async function getBookingById(id: string) {
-  const firestore = getFirebaseFirestore();
-  const doc = await firestore.collection('bookings').doc(id).get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref(`bookings/${id}`).once('value');
 
-  if (!doc.exists) {
+  if (!snapshot.exists()) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const booking = toBookingResponse(doc.id, doc.data() as Record<string, unknown>);
+  const booking = toBookingResponse(id, snapshot.val());
 
   return {
     success: true,
@@ -298,19 +304,14 @@ export async function getBookingById(id: string) {
 }
 
 export async function getBookingByBookingId(bookingId: string) {
-  const firestore = getFirebaseFirestore();
-  const snapshot = await firestore
-    .collection('bookings')
-    .where('bookingId', '==', bookingId)
-    .limit(1)
-    .get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref(`bookings/${bookingId}`).once('value');
 
-  if (snapshot.empty) {
+  if (!snapshot.exists()) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const doc = snapshot.docs[0]!;
-  const booking = toBookingResponse(doc.id, doc.data());
+  const booking = toBookingResponse(bookingId, snapshot.val());
 
   return {
     success: true,
@@ -319,36 +320,50 @@ export async function getBookingByBookingId(bookingId: string) {
 }
 
 export async function getBookingsForUser(userId: string) {
-  const firestore = getFirebaseFirestore();
-  const snapshot = await firestore.collection('bookings').where('userId', '==', userId).get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref(`bookingsByUser/${userId}`).once('value');
 
-  const bookings = snapshot.docs
-    .map((doc) => toBookingResponse(doc.id, doc.data()))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const list: any[] = [];
+  snapshot.forEach((child) => {
+    list.push(toBookingResponse(child.key || '', child.val()));
+  });
+
+  // Sort descending
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return {
     success: true,
-    count: bookings.length,
-    bookings
+    count: list.length,
+    bookings: list
   };
 }
 
 export async function updateBookingStatus(id: string, status: 'pending' | 'confirmed' | 'cancelled') {
-  const firestore = getFirebaseFirestore();
-  const docRef = firestore.collection('bookings').doc(id);
-  const doc = await docRef.get();
+  const database = getFirebaseRealtimeDatabase();
+  const bookingRef = database.ref(`bookings/${id}`);
+  const snap = await bookingRef.once('value');
 
-  if (!doc.exists) {
+  if (!snap.exists()) {
     throw new ApiError('Booking not found', 404);
   }
 
-  await docRef.update({
-    status,
-    updatedAt: new Date()
-  });
+  const bookingData = snap.val();
+  const now = new Date();
+  
+  const updates: Record<string, any> = {
+    [`bookings/${id}/status`]: status,
+    [`bookings/${id}/updatedAt`]: now.toISOString()
+  };
 
-  const updatedDoc = await docRef.get();
-  const booking = toBookingResponse(updatedDoc.id, updatedDoc.data() as Record<string, unknown>);
+  if (bookingData.userId) {
+    updates[`bookingsByUser/${bookingData.userId}/${id}/status`] = status;
+    updates[`bookingsByUser/${bookingData.userId}/${id}/updatedAt`] = now.toISOString();
+  }
+
+  await database.ref().update(updates);
+
+  const updatedSnap = await bookingRef.once('value');
+  const booking = toBookingResponse(id, updatedSnap.val());
   void logUserActivity(booking.userId, booking.email, 'Booking', 'booking_updated', `Booking status for ${booking.bookingId} updated to ${status}`);
 
   return {
@@ -359,15 +374,24 @@ export async function updateBookingStatus(id: string, status: 'pending' | 'confi
 }
 
 export async function deleteBooking(id: string) {
-  const firestore = getFirebaseFirestore();
-  const docRef = firestore.collection('bookings').doc(id);
-  const doc = await docRef.get();
+  const database = getFirebaseRealtimeDatabase();
+  const bookingRef = database.ref(`bookings/${id}`);
+  const snap = await bookingRef.once('value');
 
-  if (!doc.exists) {
+  if (!snap.exists()) {
     throw new ApiError('Booking not found', 404);
   }
 
-  await docRef.delete();
+  const bookingData = snap.val();
+  const updates: Record<string, any> = {
+    [`bookings/${id}`]: null
+  };
+
+  if (bookingData.userId) {
+    updates[`bookingsByUser/${bookingData.userId}/${id}`] = null;
+  }
+
+  await database.ref().update(updates);
 
   return {
     success: true,
@@ -376,18 +400,22 @@ export async function deleteBooking(id: string) {
 }
 
 export async function checkAvailability(input: { visitDate: string; timeSlot: string }) {
-  const firestore = getFirebaseFirestore();
-  const snapshot = await firestore
-    .collection('bookings')
-    .where('timeSlot', '==', input.timeSlot)
-    .where('status', '==', 'confirmed')
-    .get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database
+    .ref('bookings')
+    .orderByChild('timeSlot')
+    .equalTo(input.timeSlot)
+    .once('value');
 
-  const bookings = snapshot.docs
-    .map((doc) => toBookingResponse(doc.id, doc.data()))
-    .filter((booking) => booking.visitDate === input.visitDate);
+  const list: any[] = [];
+  snapshot.forEach((child) => {
+    const val = child.val();
+    if (val.visitDate === input.visitDate && val.status === 'confirmed') {
+      list.push(toBookingResponse(child.key || '', val));
+    }
+  });
 
-  const totalTickets = bookings.reduce((sum, booking) => sum + Number(booking.numberOfTickets), 0);
+  const totalTickets = list.reduce((sum, booking) => sum + Number(booking.numberOfTickets), 0);
   const maxCapacity = 100;
   const availableTickets = maxCapacity - totalTickets;
 

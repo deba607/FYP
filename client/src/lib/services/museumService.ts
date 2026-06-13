@@ -130,7 +130,7 @@ export async function registerMuseum(input: {
   if (normalizedEmail && input.loginPassword) {
     const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
     const userRef = firestore.collection('users').doc();
-    await userRef.set({
+    const userPayload = {
       name: input.name.trim() + " Admin",
       email: normalizedEmail,
       password: hashedPassword,
@@ -140,7 +140,8 @@ export async function registerMuseum(input: {
       role: 'museum',
       createdAt: now,
       updatedAt: now
-    });
+    };
+    await userRef.set(userPayload);
   }
 
   return {
@@ -215,7 +216,8 @@ export async function updateMuseum(id: string, input: {
         .get();
 
       if (!userSnapshot.empty) {
-        await userSnapshot.docs[0].ref.update({
+        const userRef = userSnapshot.docs[0].ref;
+        await userRef.update({
           email: newLoginEmail,
           updatedAt: now
         });
@@ -228,7 +230,7 @@ export async function updateMuseum(id: string, input: {
       }
       const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
       const userRef = firestore.collection('users').doc();
-      await userRef.set({
+      const userPayload = {
         name: input.name.trim() + " Admin",
         email: newLoginEmail,
         password: hashedPassword,
@@ -238,7 +240,8 @@ export async function updateMuseum(id: string, input: {
         role: 'museum',
         createdAt: now,
         updatedAt: now
-      });
+      };
+      await userRef.set(userPayload);
     }
   }
 
@@ -258,7 +261,8 @@ export async function updateMuseum(id: string, input: {
 
       if (!userSnapshot.empty) {
         const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
-        await userSnapshot.docs[0].ref.update({
+        const userRef = userSnapshot.docs[0].ref;
+        await userRef.update({
           password: hashedPassword,
           updatedAt: now
         });
@@ -358,7 +362,8 @@ export async function deleteCustomMuseum(id: string) {
         .limit(1)
         .get();
       if (!userSnapshot.empty) {
-        await userSnapshot.docs[0].ref.delete();
+        const userDoc = userSnapshot.docs[0];
+        await userDoc.ref.delete();
       }
     } catch (err) {
       console.error('Failed to delete associated user account:', err);

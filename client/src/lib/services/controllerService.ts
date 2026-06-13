@@ -1,4 +1,4 @@
-import { getFirebaseFirestore } from '../config/firebaseAdmin';
+import { getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
 
 export type ControllerDevice = {
@@ -38,16 +38,22 @@ export async function registerController(name: string, museumId: string = 'defau
     throw new ApiError('Device name is required', 400);
   }
 
-  const firestore = getFirebaseFirestore();
-  const deviceRef = firestore.collection('controllers').doc();
+  const database = getFirebaseRealtimeDatabase();
+  const deviceRef = database.ref('controllers').push();
+  const id = deviceRef.key;
   const now = new Date();
 
+  if (!id) {
+    throw new ApiError('Failed to generate device key', 500);
+  }
+
   const payload = {
+    id,
     name: name.trim(),
     museumId: museumId.trim(),
     status,
-    lastActive: now,
-    createdAt: now
+    lastActive: now.toISOString(),
+    createdAt: now.toISOString()
   };
 
   await deviceRef.set(payload);
@@ -55,34 +61,33 @@ export async function registerController(name: string, museumId: string = 'defau
   return {
     success: true,
     message: 'Controller registered successfully',
-    controller: {
-      id: deviceRef.id,
-      ...payload,
-      lastActive: now.toISOString(),
-      createdAt: now.toISOString()
-    }
+    controller: payload
   };
 }
 
 export async function getControllers() {
-  const firestore = getFirebaseFirestore();
-  const snapshot = await firestore.collection('controllers').orderBy('createdAt', 'desc').get();
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref('controllers').once('value');
 
-  const controllers = snapshot.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      id: doc.id,
-      name: String(data.name || ''),
-      museumId: String(data.museumId || ''),
-      status: String(data.status || 'offline') as ControllerDevice['status'],
-      lastActive: toDateString(data.lastActive),
-      createdAt: toDateString(data.createdAt)
-    };
+  const list: ControllerDevice[] = [];
+  snapshot.forEach((child) => {
+    const val = child.val();
+    list.push({
+      id: child.key || '',
+      name: String(val.name || ''),
+      museumId: String(val.museumId || ''),
+      status: String(val.status || 'offline') as ControllerDevice['status'],
+      lastActive: toDateString(val.lastActive),
+      createdAt: toDateString(val.createdAt)
+    });
   });
+
+  // Sort descending by createdAt
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return {
     success: true,
-    controllers
+    controllers: list
   };
 }
 
@@ -91,18 +96,18 @@ export async function updateControllerStatus(id: string, status: 'active' | 'off
     throw new ApiError('Invalid status value', 400);
   }
 
-  const firestore = getFirebaseFirestore();
-  const docRef = firestore.collection('controllers').doc(id);
-  const doc = await docRef.get();
+  const database = getFirebaseRealtimeDatabase();
+  const docRef = database.ref(`controllers/${id}`);
+  const doc = await docRef.once('value');
 
-  if (!doc.exists) {
+  if (!doc.exists()) {
     throw new ApiError('Controller device not found', 404);
   }
 
   const now = new Date();
   await docRef.update({
     status,
-    lastActive: now
+    lastActive: now.toISOString()
   });
 
   return {
@@ -110,7 +115,7 @@ export async function updateControllerStatus(id: string, status: 'active' | 'off
     message: 'Device status updated',
     controller: {
       id,
-      ...doc.data(),
+      ...doc.val(),
       status,
       lastActive: now.toISOString()
     }
@@ -118,15 +123,15 @@ export async function updateControllerStatus(id: string, status: 'active' | 'off
 }
 
 export async function deleteController(id: string) {
-  const firestore = getFirebaseFirestore();
-  const docRef = firestore.collection('controllers').doc(id);
-  const doc = await docRef.get();
+  const database = getFirebaseRealtimeDatabase();
+  const docRef = database.ref(`controllers/${id}`);
+  const doc = await docRef.once('value');
 
-  if (!doc.exists) {
+  if (!doc.exists()) {
     throw new ApiError('Controller device not found', 404);
   }
 
-  await docRef.delete();
+  await docRef.remove();
 
   return {
     success: true,
@@ -140,19 +145,25 @@ export async function logScan(
   outcome: 'granted' | 'denied',
   message: string
 ) {
-  const firestore = getFirebaseFirestore();
-  const scanRef = firestore.collection('scan_logs').doc();
+  const database = getFirebaseRealtimeDatabase();
+  const scanRef = database.ref('scan_logs').push();
+  const id = scanRef.key;
   const now = new Date();
+
+  if (!id) {
+    throw new ApiError('Failed to generate scan log key', 500);
+  }
 
   // Retrieve device name for cached display
   let deviceName = 'Unknown Device';
   if (deviceId !== 'unknown' && deviceId) {
     try {
-      const devDoc = await firestore.collection('controllers').doc(deviceId).get();
-      if (devDoc.exists) {
-        deviceName = String(devDoc.data()?.name || 'Unknown Device');
+      const devRef = database.ref(`controllers/${deviceId}`);
+      const devDoc = await devRef.once('value');
+      if (devDoc.exists()) {
+        deviceName = String(devDoc.val()?.name || 'Unknown Device');
         // also touch the device's lastActive status
-        await devDoc.ref.update({ lastActive: now });
+        await devRef.update({ lastActive: now.toISOString() });
       }
     } catch (err) {
       console.error('Failed to update device activity on scan:', err);
@@ -163,7 +174,7 @@ export async function logScan(
     ticketId: ticketId.trim(),
     deviceId,
     deviceName,
-    scannedAt: now,
+    scannedAt: now.toISOString(),
     outcome,
     message: message.trim()
   };
@@ -173,7 +184,7 @@ export async function logScan(
   return {
     success: true,
     log: {
-      id: scanRef.id,
+      id,
       ...payload,
       scannedAt: now.toISOString()
     }
@@ -181,30 +192,30 @@ export async function logScan(
 }
 
 export async function getScanLogs(deviceId?: string) {
-  const firestore = getFirebaseFirestore();
-  let query = firestore.collection('scan_logs').orderBy('scannedAt', 'desc');
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref('scan_logs').once('value');
 
-  if (deviceId) {
-    query = query.where('deviceId', '==', deviceId);
-  }
-
-  const snapshot = await query.limit(100).get();
-
-  const logs = snapshot.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      id: doc.id,
-      ticketId: String(data.ticketId || ''),
-      deviceId: String(data.deviceId || ''),
-      deviceName: String(data.deviceName || ''),
-      scannedAt: toDateString(data.scannedAt),
-      outcome: String(data.outcome || 'denied') as ScanLog['outcome'],
-      message: String(data.message || '')
-    };
+  const list: any[] = [];
+  snapshot.forEach((child) => {
+    const val = child.val();
+    if (!deviceId || val.deviceId === deviceId) {
+      list.push({
+        id: child.key || '',
+        ticketId: String(val.ticketId || ''),
+        deviceId: String(val.deviceId || ''),
+        deviceName: String(val.deviceName || ''),
+        scannedAt: toDateString(val.scannedAt),
+        outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
+        message: String(val.message || '')
+      });
+    }
   });
+
+  // Sort descending by scannedAt
+  list.sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
 
   return {
     success: true,
-    logs
+    logs: list
   };
 }

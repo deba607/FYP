@@ -5,9 +5,7 @@ from chatterbot.trainers import ListTrainer
 from .intent_classifier import IntentClassifier
 from .booking_handler import BookingHandler
 import os
-import csv
 import requests
-import json
 import logging
 from pathlib import Path
 import time
@@ -17,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 class MuseumAssistant:
     def __init__(self):
-        self.db_path = Path(__file__).resolve().parent.parent / 'museum_bot.db'
+        self.db_path = Path(__file__).resolve().parent.parent / 'museum_bot_firestore.db'
 
         # Create ChatterBot instance with minimal dependencies
         self.chatbot = self._create_chatbot()
         
-        # Load museum data from CSV
-        self.museums_data = self.load_museums_from_csv()
+        # Load museum data from the Next.js API, which reads Firestore museums.
+        self.museums_data = self.load_museums_from_firestore_api()
         
         # Train the bot with museum-specific conversations
         try:
@@ -83,44 +81,36 @@ class MuseumAssistant:
             except Exception as delete_err:
                 logger.warning("Failed to remove corrupted DB file %s: %s", file_path, delete_err)
 
-    def load_museums_from_csv(self):
-        """Load museum data from CSV file"""
+    def load_museums_from_firestore_api(self):
+        """Load museum data from the Firestore-backed Next.js API."""
         museums = []
-        csv_path = os.path.join(os.path.dirname(__file__), 'indian museum dataset.csv')
-
-        def make_id(name: str, idx: int) -> str:
-            if not name:
-                return f"museum_{idx}"
-            slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-            return slug or f"museum_{idx}"
-
+        api_base = os.environ.get('CHATBOT_API_URL') or 'http://localhost:3000'
         try:
-            with open(csv_path, 'r', encoding='utf-8') as file:
-                reader = csv.DictReader(file)
-                for i, row in enumerate(reader, start=1):
-                    name = (row.get('Museum Name') or row.get('Museum') or '').strip()
-                    location = (row.get('City/Location') or row.get('City') or row.get('Location') or '').strip()
-                    state = (row.get('State/UT') or row.get('State') or '').strip()
-                    category = (row.get('Category/Type') or row.get('Category') or '').strip()
-                    # Price may not exist in the CSV; fall back to sensible default
-                    price_raw = (row.get('Price') or row.get('price') or '').strip()
-                    try:
-                        price = float(price_raw) if price_raw else 200.0
-                    except ValueError:
-                        price = 200.0
-
-                    museum = {
-                        'museum_id': make_id(name, i),
-                        'name': name,
-                        'state': state,
-                        'location': location,
-                        'category': category,
-                        'price': price,
-                        'raw': row
-                    }
-                    museums.append(museum)
-        except FileNotFoundError:
-            print(f"Warning: CSV file not found at {csv_path}")
+            response = requests.get(f"{api_base}/api/museums", timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            for row in payload.get("museums", []):
+                name = str(row.get("name") or "").strip()
+                if not name:
+                    continue
+                price_raw = row.get("price", 200)
+                try:
+                    price = float(price_raw)
+                except (TypeError, ValueError):
+                    price = 200.0
+                museums.append({
+                    "museum_id": str(row.get("museum_id") or row.get("id") or "").strip(),
+                    "name": name,
+                    "state": str(row.get("state") or "").strip(),
+                    "location": str(row.get("location") or "").strip(),
+                    "category": str(row.get("category") or "").strip(),
+                    "description": str(row.get("description") or "").strip(),
+                    "price": price,
+                    "prices": row.get("prices") or {},
+                    "raw": row,
+                })
+        except Exception as err:
+            logger.warning("Unable to load Firestore museums from %s/api/museums: %s", api_base, err)
 
         return museums
 
@@ -143,11 +133,11 @@ class MuseumAssistant:
         # Location training
         trainer.train([
             "Where is the museum located?",
-            "Bharat Museum is located at National Museum Complex, New Delhi.",
+            "Please tell me the museum name, and I will look up its location from the Firestore museum catalog.",
             "What is the museum address?",
-            "Our address is National Museum Complex, New Delhi.",
+            "Please provide the museum name so I can share the address from the Firestore museum catalog.",
             "How to reach the museum?",
-            "We are located at National Museum Complex in New Delhi. You can reach us by metro or taxi."
+            "Please choose a museum from the catalog first, then I can help with its location details."
         ])
         
         # Ticket prices training
@@ -215,10 +205,10 @@ class MuseumAssistant:
 
         # Search tickets / museums
         trainer.train([
-            "Find a ticket for National Museum",
-            "I found National Museum in New Delhi. Would you like details or to book tickets?",
-            "Search ticket for Salar Jung Museum",
-            "Salar Jung Museum is in Hyderabad. Would you like to know timings, price, or book tickets?",
+            "Find a ticket for a museum",
+            "Please share the museum name or city. I will search only the Firestore museum catalog.",
+            "Search ticket for a museum",
+            "Please provide the museum name. I will check whether it exists in the Firestore museum catalog.",
             "Show me tickets",
             "Which museum or city are you interested in?"
         ])
@@ -234,7 +224,7 @@ class MuseumAssistant:
         ])
 
     def train_indian_museums_data(self, trainer):
-        """Train chatbot with Indian museums data from CSV"""
+        """Train chatbot only with museums loaded from the Firestore-backed API."""
         
         # Group museums by state
         states = {}
@@ -267,44 +257,21 @@ class MuseumAssistant:
                     f"Notable museums in {state} include {museum_names}."
                 ])
         
-        # Train category-wise queries
-        category_samples = {
-            'Art': 'We have several art museums across India including galleries in major cities.',
-            'Archaeology': 'Archaeological museums showcase ancient artifacts and historical treasures.',
-            'Science': 'Science museums offer interactive exhibits and learning experiences.',
-            'History': 'History museums preserve our rich cultural heritage and past.',
-            'Military': 'Military museums display India\'s defense heritage and valor.'
-        }
-        
-        for cat, response in category_samples.items():
+        # Train category-wise queries using only categories present in Firestore.
+        for category, museums_list in list(categories.items())[:20]:
+            if not category or not museums_list:
+                continue
+            museum_names = ", ".join([m[0] for m in museums_list[:3] if m[0]])
+            response = f"In the Firestore catalog, {category} museums include {museum_names}." if museum_names else f"I do not have named {category} museums in the Firestore catalog yet."
             trainer.train([
-                f"Tell me about {cat} museums",
+                f"Tell me about {category} museums",
                 response
             ])
             trainer.train([
-                f"Do you have {cat} museums?",
-                f"Yes! {response}"
+                f"Do you have {category} museums?",
+                response
             ])
         
-        # Train with popular museums
-        popular_museums = [
-            ("National Museum", "New Delhi", "History/Art", "The National Museum in New Delhi is one of the largest museums in India with collections spanning 5,000 years of Indian history."),
-            ("Indian Museum", "Kolkata", "Multi-purpose", "The Indian Museum in Kolkata is the oldest museum in India, established in 1814."),
-            ("Salar Jung Museum", "Hyderabad", "Art/Antiques", "Salar Jung Museum in Hyderabad houses one of the world's largest one-man collections of antiques."),
-            ("Chhatrapati Shivaji Maharaj Vastu Sangrahalaya", "Mumbai", "History/Art", "CSMVS in Mumbai is a premier museum showcasing art, archaeology and natural history."),
-            ("Victoria Memorial Hall", "Kolkata", "History/Art", "Victoria Memorial Hall in Kolkata is a magnificent marble building housing British Raj era artifacts.")
-        ]
-        
-        for name, city, cat, desc in popular_museums:
-            trainer.train([
-                f"Tell me about {name}",
-                desc
-            ])
-            trainer.train([
-                f"What is {name}?",
-                f"{name} is located in {city}. {desc}"
-            ])
-
         # Train QA pairs per museum to improve knowledge and booking prompts
         for museum in self.museums_data:
             name = museum.get('name', '').strip()

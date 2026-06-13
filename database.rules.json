@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "user_activities": {
+      ".read": "true",
+      ".write": "true"
+    },
+    "bookings": {
+      ".read": "true",
+      ".write": "true"
+    },
+    "bookingsByUser": {
+      "$userId": {
+        ".read": "true",
+        ".write": "true"
+      }
+    },
+    "controllers": {
+      ".read": "true",
+      ".write": "true"
+    },
+    "scan_logs": {
+      ".read": "true",
+      ".write": "true"
+    }
+  }
+}

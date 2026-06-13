@@ -29,8 +29,15 @@ import { DashboardCard } from '../../components/ui/dashboard-card';
 import { DashboardHeader } from '../../components/ui/dashboard-header';
 import { RevenueChart } from '../../components/ui/revenue-chart';
 import { SidebarInset, SidebarProvider } from '../../components/ui/sidebar';
+import { getFirebaseClientFirestore, getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
+import { collection, query as firestoreQuery, orderBy, onSnapshot } from 'firebase/firestore';
+import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
+import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
 type Booking = {
+  id?: string;
   _id: string;
   bookingId: string;
   userId?: string | null;
@@ -150,6 +157,7 @@ function readStoredUser(): StoredUser | null {
 }
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -158,6 +166,7 @@ export default function AdminDashboardPage() {
   const [health, setHealth] = useState<HealthState>('checking');
   const [user, setUser] = useState<StoredUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
 
   // ── User management state ──
   const [allUsers, setAllUsers] = useState<UserRecord[]>([]);
@@ -214,21 +223,8 @@ export default function AdminDashboardPage() {
   const [isSimulatedMode, setIsSimulatedMode] = useState(false);
 
   const loadMuseumsList = useCallback(async () => {
-    setMuseumsLoading(true);
-    setMuseumsError('');
-    try {
-      const res = await fetch('/api/museums', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data?.success) {
-        setMuseumsList(data.museums || []);
-      } else {
-        throw new Error(data?.message || 'Failed to load museums');
-      }
-    } catch (err) {
-      setMuseumsError((err as Error).message || 'Failed to load museums');
-    } finally {
-      setMuseumsLoading(false);
-    }
+    setMuseumsSuccess('Real-time museum sync active.');
+    setTimeout(() => setMuseumsSuccess(''), 3000);
   }, []);
 
   const resetMuseumForm = () => {
@@ -607,16 +603,73 @@ export default function AdminDashboardPage() {
   const [selectedMuseum, setSelectedMuseum] = useState('All Museums');
 
   const museumOptions = useMemo(() => {
-    const names = bookings.map((b) => b.museumName).filter(Boolean);
+    const names = bookings
+      .map((b) => b.museumName)
+      .filter((name): name is string => Boolean(name));
     return ['All Museums', ...Array.from(new Set(names))];
   }, [bookings]);
 
   const isAdmin = user?.role === 'admin';
+  const userRole = user?.role;
 
   useEffect(() => {
     setUser(readStoredUser());
     setAuthChecked(true);
+
+    const auth = getFirebaseClientAuth();
+    let unsubscribeFirestoreUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setFirebaseAuthReady(true);
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+        unsubscribeFirestoreUser = null;
+      }
+
+      if (firebaseUser) {
+        unsubscribeFirestoreUser = subscribeToFirestoreUser(
+          firebaseUser,
+          (data) => {
+            const updatedUser = {
+              name: data.name || firebaseUser.displayName || '',
+              email: data.email || firebaseUser.email || '',
+              role: data.role || 'user',
+            };
+            localStorage.setItem('museum_auth_user', JSON.stringify({
+              id: firebaseUser.uid,
+              phone: data.phone || '',
+              dateOfBirth: data.dateOfBirth || '',
+              address: data.address || '',
+              photoURL: data.photoURL || firebaseUser.photoURL || '',
+              profileCompleted: !!data.profileCompleted,
+              ...updatedUser
+            }));
+            setUser(updatedUser);
+          },
+          (err) => {
+            console.error("Admin Firestore user listener error:", err);
+          }
+        );
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    if (!authChecked || !userRole || userRole === 'admin') return;
+
+    if (userRole === 'museum') {
+      router.replace('/museum-dashboard');
+    } else if (userRole === 'controller') {
+      router.replace('/controller-dashboard');
+    }
+  }, [authChecked, router, userRole]);
 
   // ── Section state ──
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -678,18 +731,7 @@ export default function AdminDashboardPage() {
   const [selectedActivityCategory, setSelectedActivityCategory] = useState('All Categories');
 
   const loadUserActivity = useCallback(async () => {
-    setUserActivityLoading(true);
-    try {
-      const res = await fetch('/api/admin/activities', { cache: 'no-store' });
-      const data = await res.json();
-      if (res.ok && data?.success) {
-        setUserActivity(data.activities || []);
-      }
-    } catch (err) {
-      console.error('Failed to load user activity:', err);
-    } finally {
-      setUserActivityLoading(false);
-    }
+    // Real-time sync is active, no manual fetching required
   }, []);
 
   useEffect(() => {
@@ -721,29 +763,8 @@ export default function AdminDashboardPage() {
   }, [userActivity, activityQuery, selectedActivityCategory]);
 
   const loadBookings = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
-    if (mode === 'initial') {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-
-    setError('');
-
-    try {
-      const response = await fetch('/api/bookings', { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.message || data?.error || 'Unable to load bookings');
-      }
-
-      setBookings(Array.isArray(data.bookings) ? data.bookings : []);
-    } catch (err) {
-      setError((err as Error).message || 'Unable to load bookings');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
   }, []);
 
   const checkHealth = useCallback(async () => {
@@ -760,23 +781,7 @@ export default function AdminDashboardPage() {
 
   // ── User management callbacks ──
   const loadUsers = useCallback(async () => {
-    setUsersLoading(true);
-    setUsersError('');
-
-    try {
-      const response = await fetch('/api/admin/users', { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.message || data?.error || 'Unable to load users');
-      }
-
-      setAllUsers(Array.isArray(data.users) ? data.users : []);
-    } catch (err) {
-      setUsersError((err as Error).message || 'Unable to load users');
-    } finally {
-      setUsersLoading(false);
-    }
+    // Real-time sync active, no manual fetching required
   }, []);
 
   const updateUserRole = async (userId: string, nextRole: string) => {
@@ -830,12 +835,132 @@ export default function AdminDashboardPage() {
   }, [allUsers, userQuery]);
 
   useEffect(() => {
-    if (!authChecked || !isAdmin) return;
-    void loadBookings();
+    if (!authChecked || !isAdmin || !firebaseAuthReady) return;
+
+    setLoading(true);
+    setUsersLoading(true);
+    setMuseumsLoading(true);
+    setUserActivityLoading(true);
+
+    const fStore = getFirebaseClientFirestore();
+    const rdb = getFirebaseClientRealtimeDatabase();
+
+    // 1. Museums Listener
+    const museumsQuery = firestoreQuery(collection(fStore, 'museums'), orderBy('createdAt', 'desc'));
+    const unsubscribeMuseums = onSnapshot(museumsQuery, (snapshot) => {
+      const list = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || String(data.createdAt || ''),
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || String(data.updatedAt || '')
+        };
+      });
+      setMuseumsList(list);
+      setMuseumsLoading(false);
+    }, (err) => {
+      console.error('Failed to subscribe to museums:', err);
+      setMuseumsLoading(false);
+    });
+
+    // 2. Bookings Listener (Realtime Database)
+    const bookingsRef = databaseQuery(ref(rdb, 'bookings'), orderByChild('createdAt'));
+    const unsubscribeBookings = onValue(bookingsRef, (snapshot) => {
+      const list: Booking[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val() || {};
+        list.push({
+          id: child.key || '',
+          _id: child.key || '',
+          bookingId: String(val.bookingId || child.key || ''),
+          userId: val.userId || null,
+          name: String(val.name || ''),
+          email: String(val.email || ''),
+          phone: String(val.phone || ''),
+          visitDate: String(val.visitDate || ''),
+          timeSlot: String(val.timeSlot || ''),
+          numberOfTickets: Number(val.numberOfTickets || 0),
+          visitorType: String(val.visitorType || ''),
+          totalAmount: Number(val.totalAmount || 0),
+          museumName: val.museumName || null,
+          museumLocation: val.museumLocation || null,
+          museumCategory: val.museumCategory || null,
+          paymentStatus: val.paymentStatus || '',
+          status: String(val.status || 'pending'),
+          createdAt: String(val.createdAt || '')
+        });
+      });
+      // Sort descending by createdAt
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setBookings(list);
+      setLoading(false);
+    }, (err) => {
+      console.error('Failed to subscribe to bookings:', err);
+      setLoading(false);
+    });
+
+    // 3. Users Listener
+    const usersQuery = firestoreQuery(collection(fStore, 'users'), orderBy('createdAt', 'desc'));
+    const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+      const list = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: String(data.name || ''),
+          email: String(data.email || ''),
+          phone: String(data.phone || ''),
+          role: String(data.role || 'user'),
+          authProvider: String(data.authProvider || 'password'),
+          profileCompleted: Boolean(data.profileCompleted),
+          dateOfBirth: data.dateOfBirth || '',
+          address: data.address || '',
+          photoURL: data.photoURL || '',
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || String(data.createdAt || ''),
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || String(data.updatedAt || '')
+        };
+      });
+      setAllUsers(list);
+      setUsersLoading(false);
+    }, (err) => {
+      console.error('Failed to subscribe to users:', err);
+      setUsersLoading(false);
+    });
+
+    // 4. User Activities Listener (Realtime Database)
+    const activitiesRef = databaseQuery(ref(rdb, 'user_activities'), orderByChild('timestamp'), limitToLast(200));
+    const unsubscribeActivities = onValue(activitiesRef, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val();
+        list.push({
+          id: child.key || '',
+          userId: val.userId || null,
+          email: String(val.email || 'guest'),
+          category: String(val.category || 'Auth'),
+          action: String(val.action || ''),
+          details: String(val.details || ''),
+          timestamp: String(val.timestamp || '')
+        });
+      });
+      list.reverse();
+      setUserActivity(list);
+      setUserActivityLoading(false);
+    }, (err) => {
+      console.error('Failed to subscribe to user activities:', err);
+      setUserActivityLoading(false);
+    });
+
+    // Run health check initially
     void checkHealth();
-    void loadUsers();
-    void loadMuseumsList();
-  }, [authChecked, checkHealth, isAdmin, loadBookings, loadUsers, loadMuseumsList]);
+
+    return () => {
+      unsubscribeMuseums();
+      unsubscribeBookings();
+      unsubscribeUsers();
+      unsubscribeActivities();
+    };
+  }, [authChecked, checkHealth, isAdmin, firebaseAuthReady]);
 
   const filteredBookings = useMemo(() => {
     let list = bookings;

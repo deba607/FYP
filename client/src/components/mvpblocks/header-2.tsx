@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, easeInOut } from 'framer-motion';
-import { Menu, X, ArrowRight, Search } from 'lucide-react';
+import { Menu, X, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { signOut } from 'firebase/auth';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { usePathname } from 'next/navigation';
 import { translate } from '../../lib/i18n';
@@ -14,6 +14,8 @@ import { LanguageSelector } from '../ui/language-selector';
 
 import { ModeToggle } from './mode-toggle'
 import { trackClientEvent } from '../ui/activity-tracker';
+import { getDashboardLinksForRole } from '../../lib/dashboardAccess';
+import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
 interface NavItem {
   name: string;
@@ -50,6 +52,7 @@ export default function Header2() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
+  const [roleChecked, setRoleChecked] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
 
 
@@ -82,6 +85,7 @@ export default function Header2() {
 
       if (!storedUser && !firebaseUser) {
         setSignedInUser(null);
+        setRoleChecked(true);
         return;
       }
 
@@ -109,6 +113,55 @@ export default function Header2() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    const auth = getFirebaseClientAuth();
+    let unsubscribeFirestoreUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setRoleChecked(false);
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+        unsubscribeFirestoreUser = null;
+      }
+
+      if (firebaseUser) {
+        unsubscribeFirestoreUser = subscribeToFirestoreUser(
+          firebaseUser,
+          (data) => {
+            const updatedUser: SignedInUser = {
+              id: firebaseUser.uid,
+              name: data.name || firebaseUser.displayName || '',
+              email: data.email || firebaseUser.email || '',
+              phone: data.phone || '',
+              dateOfBirth: data.dateOfBirth || '',
+              address: data.address || '',
+              photoURL: data.photoURL || firebaseUser.photoURL || '',
+              profileCompleted: !!data.profileCompleted,
+              role: data.role || 'user',
+            };
+            localStorage.setItem('museum_auth_user', JSON.stringify(updatedUser));
+            setSignedInUser(updatedUser);
+            setRoleChecked(true);
+          },
+          (err) => {
+            console.error("Header Firestore user listener error:", err);
+            setRoleChecked(true);
+          }
+        );
+      } else {
+        setSignedInUser(null);
+        setRoleChecked(true);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+      }
+    };
+  }, []);
+
   const handleSignOut = async () => {
     // Log user sign-out action before wiping local storage
     if (signedInUser?.email) {
@@ -135,17 +188,21 @@ export default function Header2() {
     signedInUser?.name?.trim()?.charAt(0)?.toUpperCase() ||
     signedInUser?.email?.trim()?.charAt(0)?.toUpperCase() ||
     'U';
-  const isAdmin = signedInUser?.role === 'admin';
-  const isMuseum = signedInUser?.role === 'admin' || signedInUser?.role === 'museum';
-  const isController = signedInUser?.role === 'admin' || signedInUser?.role === 'museum' || signedInUser?.role === 'controller';
   const visibleNavItems = navItems;
+  const dashboardLinks = roleChecked ? getDashboardLinksForRole(signedInUser?.role) : [];
+  const isAdmin = dashboardLinks.some((item) => item.href === '/admin');
+  const isMuseum = dashboardLinks.some((item) => item.href === '/museum-dashboard');
+  const isController = dashboardLinks.some((item) => item.href === '/controller-dashboard');
 
-  const currentDashboard = pathname.startsWith('/admin')
+  const matchedDashboard = pathname.startsWith('/admin')
     ? '/admin'
     : pathname.startsWith('/museum-dashboard')
     ? '/museum-dashboard'
     : pathname.startsWith('/controller-dashboard')
     ? '/controller-dashboard'
+    : '';
+  const currentDashboard = dashboardLinks.some((item) => item.href === matchedDashboard)
+    ? matchedDashboard
     : '';
 
   const containerVariants = {
@@ -269,18 +326,10 @@ export default function Header2() {
               className="hidden min-w-0 shrink-0 items-center justify-end gap-1.5 xl:flex"
               variants={itemVariants}
             >
-              <motion.button
-                aria-label={translate(language, 'search.label')}
-                className="text-foreground hover:bg-muted/60 rounded-lg p-2 transition-colors duration-200"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Search className="h-5 w-5" />
-              </motion.button>
 
               <LanguageSelector compact />
 
-              {(isAdmin || isMuseum || isController) && (
+              {dashboardLinks.length > 0 && (
                 <div className="relative">
                   <select
                     aria-label="Dashboard Redirect Select"
@@ -293,15 +342,11 @@ export default function Header2() {
                     className="border-border bg-background/90 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-3 py-2 text-sm font-semibold cursor-pointer outline-hidden focus:ring-2 focus:ring-emerald-500/20"
                   >
                     {!currentDashboard && <option value="" disabled className="text-muted-foreground">Select Dashboard</option>}
-                    {isAdmin && (
-                      <option value="/admin" className="text-foreground bg-background">Admin Dashboard</option>
-                    )}
-                    {isMuseum && (
-                      <option value="/museum-dashboard" className="text-foreground bg-background">Museum Dashboard</option>
-                    )}
-                    {isController && (
-                      <option value="/controller-dashboard" className="text-foreground bg-background">Controller Dashboard</option>
-                    )}
+                    {dashboardLinks.map((item) => (
+                      <option key={item.href} value={item.href} className="text-foreground bg-background">
+                        {item.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}

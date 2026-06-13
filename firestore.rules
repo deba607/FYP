@@ -1,22 +1,81 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+  
+    function signedInEmail() {
+      return request.auth.token.email == null ? '' : request.auth.token.email.lower();
+    }
+
+    function isOwnUserDocument(userId) {
+      return request.auth != null && (
+        request.auth.uid == userId ||
+        (
+          resource.data.email is string &&
+          resource.data.email.lower() == signedInEmail()
+        )
+      );
+    }
+
+    // Helper function to check if the user has a specific role in Firestore
+    function hasRole(role) {
+      return request.auth != null && (
+        request.auth.token.role == role ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role
+        )
+      );
+    }
+
+    // Helper to check if user is admin
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true || 
+        hasRole('admin')
+      );
+    }
+
     // Public museums catalog (read-only for everyone)
     match /museums/{museumId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow write: if isAdmin();
     }
 
-    // Bookings: users can manage their own bookings
+    // Bookings: users can manage their own bookings, admins can read all
     match /bookings/{bookingId} {
-      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || request.auth.token.admin == true);
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin()
+      );
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
-    // Users collection: owner-only access
+    // Users collection: signed-in users can read/update their own user doc by UID or email.
+    // Admins can manage all users.
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwnUserDocument(userId) || isAdmin();
+      allow create: if request.auth != null && (
+        request.auth.uid == userId ||
+        (
+          request.resource.data.email is string &&
+          request.resource.data.email.lower() == signedInEmail()
+        ) ||
+        isAdmin()
+      );
+      allow update: if isOwnUserDocument(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Controllers: read for all authenticated users, write for admin/museum managers
+    match /controllers/{controllerId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || hasRole('museum');
+    }
+
+    // Scan logs: read/write for all authenticated users
+    match /scan_logs/{logId} {
+      allow read, write: if request.auth != null;
     }
 
     // Default: deny all other access

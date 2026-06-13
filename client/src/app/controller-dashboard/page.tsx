@@ -20,6 +20,10 @@ import {
   Unlock
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
+import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
+import { ref, onValue, query as databaseQuery, orderByChild } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
+import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
 type ControllerDevice = {
   id: string;
@@ -60,6 +64,7 @@ function formatDate(value: string) {
 export default function ControllerDashboardPage() {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
 
   // Lists
   const [controllers, setControllers] = useState<ControllerDevice[]>([]);
@@ -88,6 +93,7 @@ export default function ControllerDashboardPage() {
   const selectedDevice = useMemo(() => {
     return controllers.find((c) => c.id === selectedDeviceId) || null;
   }, [controllers, selectedDeviceId]);
+  const isSelectedDeviceUnavailable = !!selectedDevice && selectedDevice.status !== 'active';
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -101,55 +107,130 @@ export default function ControllerDashboardPage() {
       }
       setAuthChecked(true);
     }
+
+    const auth = getFirebaseClientAuth();
+    let unsubscribeFirestoreUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setFirebaseAuthReady(true);
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+        unsubscribeFirestoreUser = null;
+      }
+
+      if (firebaseUser) {
+        unsubscribeFirestoreUser = subscribeToFirestoreUser(
+          firebaseUser,
+          (data) => {
+            const updatedUser = {
+              id: firebaseUser.uid,
+              name: data.name || firebaseUser.displayName || '',
+              email: data.email || firebaseUser.email || '',
+              phone: data.phone || '',
+              dateOfBirth: data.dateOfBirth || '',
+              address: data.address || '',
+              photoURL: data.photoURL || firebaseUser.photoURL || '',
+              profileCompleted: !!data.profileCompleted,
+              role: data.role || 'user',
+            };
+            localStorage.setItem('museum_auth_user', JSON.stringify(updatedUser));
+            setUser(updatedUser);
+          },
+          (err) => {
+            console.error("Controller Dashboard Firestore user listener error:", err);
+          }
+        );
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+      }
+    };
   }, []);
 
-  const fetchControllers = useCallback(async () => {
+  const fetchControllers = useCallback(async () => {}, []);
+  const fetchLocalLogs = useCallback(async (devId: string) => {}, []);
+
+  // Real-time listener for controllers
+  useEffect(() => {
+    if (!authChecked || !isAuthorized || !firebaseAuthReady) return;
+
     setLoading(true);
-    try {
-      const res = await fetch('/api/controllers', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data?.success) {
-        const list: ControllerDevice[] = data.controllers || [];
-        setControllers(list);
-        if (list.length > 0 && !selectedDeviceId) {
-          setSelectedDeviceId(list[0]!.id);
-        }
+    const db = getFirebaseClientRealtimeDatabase();
+    const controllersRef = databaseQuery(ref(db, 'controllers'), orderByChild('createdAt'));
+    
+    const unsubscribe = onValue(controllersRef, (snapshot) => {
+      const list: ControllerDevice[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val();
+        list.push({
+          id: child.key || '',
+          name: String(val.name || ''),
+          museumId: String(val.museumId || ''),
+          status: String(val.status || 'offline') as ControllerDevice['status'],
+          lastActive: String(val.lastActive || ''),
+          createdAt: String(val.createdAt || '')
+        });
+      });
+      // Sort descending by createdAt
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setControllers(list);
+      
+      // Auto-select the first device if none is selected
+      if (list.length > 0) {
+        setSelectedDeviceId((prev) => {
+          if (!prev) return list[0]!.id;
+          const exists = list.some((c) => c.id === prev);
+          return exists ? prev : list[0]!.id;
+        });
       }
-    } catch (err) {
-      console.error('Failed to fetch controllers:', err);
-    } finally {
       setLoading(false);
-    }
-  }, [selectedDeviceId]);
+    }, (err) => {
+      console.error('Failed to subscribe to controllers:', err);
+      setLoading(false);
+    });
 
-  const fetchLocalLogs = useCallback(async (devId: string) => {
-    if (!devId) return;
-    try {
-      const res = await fetch(`/api/scan-logs?deviceId=${devId}`, { cache: 'no-store' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data?.success) {
-        setLocalLogs(data.logs || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch local logs:', err);
-    }
-  }, []);
+    return () => unsubscribe();
+  }, [authChecked, isAuthorized, firebaseAuthReady]);
 
-  // Fetch controllers initially
+  // Real-time listener for scan logs of selected device
   useEffect(() => {
-    if (authChecked && isAuthorized) {
-      void fetchControllers();
-    }
-  }, [authChecked, isAuthorized, fetchControllers]);
+    if (!selectedDeviceId || !firebaseAuthReady) return;
 
-  // Fetch logs whenever the selected device changes
-  useEffect(() => {
-    if (selectedDeviceId) {
-      void fetchLocalLogs(selectedDeviceId);
-      setValidationResult({ status: 'idle', message: '' });
-      setGateOpenCountdown(0);
-    }
-  }, [selectedDeviceId, fetchLocalLogs]);
+    const db = getFirebaseClientRealtimeDatabase();
+    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'));
+
+    const unsubscribe = onValue(logsRef, (snapshot) => {
+      const list: ScanLog[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val();
+        if (val.deviceId === selectedDeviceId) {
+          list.push({
+            id: child.key || '',
+            ticketId: String(val.ticketId || ''),
+            deviceId: String(val.deviceId || ''),
+            deviceName: String(val.deviceName || ''),
+            scannedAt: String(val.scannedAt || ''),
+            outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
+            message: String(val.message || '')
+          });
+        }
+      });
+      // Sort descending by scannedAt
+      list.sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
+      setLocalLogs(list);
+    }, (err) => {
+      console.error('Failed to subscribe to scan logs:', err);
+    });
+
+    setValidationResult({ status: 'idle', message: '' });
+    setGateOpenCountdown(0);
+
+    return () => unsubscribe();
+  }, [selectedDeviceId, firebaseAuthReady]);
 
   // Turnstile Gate Opening Countdown
   useEffect(() => {
@@ -522,11 +603,11 @@ export default function ControllerDashboardPage() {
                       <QrCode className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                       <input
                         type="text"
-                        disabled={scanning || (selectedDevice && selectedDevice.status !== 'active')}
+                        disabled={scanning || isSelectedDeviceUnavailable}
                         value={ticketInput}
                         onChange={(e) => setTicketInput(e.target.value)}
                         placeholder={
-                          selectedDevice && selectedDevice.status !== 'active'
+                          isSelectedDeviceUnavailable
                             ? 'Device is OFFLINE / MAINTENANCE'
                             : 'Scan QR Code / Enter Ticket ID (e.g. BM...)'
                         }
@@ -538,7 +619,7 @@ export default function ControllerDashboardPage() {
                       disabled={
                         scanning ||
                         !ticketInput.trim() ||
-                        (selectedDevice && selectedDevice.status !== 'active')
+                        isSelectedDeviceUnavailable
                       }
                       className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 text-sm font-semibold text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-40 transition-all shrink-0"
                     >

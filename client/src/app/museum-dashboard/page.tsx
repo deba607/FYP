@@ -21,6 +21,10 @@ import {
   AlertCircle
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
+import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
+import { ref, onValue, query as databaseQuery, orderByChild } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
+import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
 type ControllerDevice = {
   id: string;
@@ -63,6 +67,7 @@ function formatDate(value: string) {
 export default function MuseumDashboardPage() {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
 
   // States
   const [controllers, setControllers] = useState<ControllerDevice[]>([]);
@@ -94,43 +99,113 @@ export default function MuseumDashboardPage() {
       }
       setAuthChecked(true);
     }
+
+    const auth = getFirebaseClientAuth();
+    let unsubscribeFirestoreUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setFirebaseAuthReady(true);
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+        unsubscribeFirestoreUser = null;
+      }
+
+      if (firebaseUser) {
+        unsubscribeFirestoreUser = subscribeToFirestoreUser(
+          firebaseUser,
+          (data) => {
+            const updatedUser = {
+              id: firebaseUser.uid,
+              name: data.name || firebaseUser.displayName || '',
+              email: data.email || firebaseUser.email || '',
+              phone: data.phone || '',
+              dateOfBirth: data.dateOfBirth || '',
+              address: data.address || '',
+              photoURL: data.photoURL || firebaseUser.photoURL || '',
+              profileCompleted: !!data.profileCompleted,
+              role: data.role || 'user',
+            };
+            localStorage.setItem('museum_auth_user', JSON.stringify(updatedUser));
+            setUser(updatedUser);
+          },
+          (err) => {
+            console.error("Museum Dashboard Firestore user listener error:", err);
+          }
+        );
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestoreUser) {
+        unsubscribeFirestoreUser();
+      }
+    };
   }, []);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [controllersRes, logsRes] = await Promise.all([
-        fetch('/api/controllers', { cache: 'no-store' }),
-        fetch('/api/scan-logs', { cache: 'no-store' })
-      ]);
-
-      const controllersData = await controllersRes.json().catch(() => ({}));
-      const logsData = await logsRes.json().catch(() => ({}));
-
-      if (controllersRes.ok && controllersData?.success) {
-        setControllers(controllersData.controllers || []);
-      } else {
-        throw new Error(controllersData?.message || 'Failed to fetch controllers');
-      }
-
-      if (logsRes.ok && logsData?.success) {
-        setScanLogs(logsData.logs || []);
-      } else {
-        throw new Error(logsData?.message || 'Failed to fetch scan logs');
-      }
-    } catch (err) {
-      setError((err as Error).message || 'An error occurred while loading data.');
-    } finally {
-      setLoading(false);
-    }
+    setSuccess('Real-time sync active. Data is up to date.');
+    setTimeout(() => setSuccess(''), 3000);
   }, []);
 
   useEffect(() => {
-    if (authChecked && isAuthorized) {
-      void fetchData();
-    }
-  }, [authChecked, isAuthorized, fetchData]);
+    if (!authChecked || !isAuthorized || !firebaseAuthReady) return;
+
+    setLoading(true);
+    const db = getFirebaseClientRealtimeDatabase();
+
+    // Set up controllers listener
+    const controllersRef = databaseQuery(ref(db, 'controllers'), orderByChild('createdAt'));
+    const unsubscribeControllers = onValue(controllersRef, (snapshot) => {
+      const list: ControllerDevice[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val();
+        list.push({
+          id: child.key || '',
+          name: String(val.name || ''),
+          museumId: String(val.museumId || ''),
+          status: String(val.status || 'offline') as ControllerDevice['status'],
+          lastActive: String(val.lastActive || ''),
+          createdAt: String(val.createdAt || '')
+        });
+      });
+      // Sort descending by createdAt
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setControllers(list);
+      setLoading(false);
+    }, (err) => {
+      setError('Failed to subscribe to controllers updates: ' + err.message);
+      setLoading(false);
+    });
+
+    // Set up scan logs listener
+    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'));
+    const unsubscribeLogs = onValue(logsRef, (snapshot) => {
+      const list: ScanLog[] = [];
+      snapshot.forEach((child) => {
+        const val = child.val();
+        list.push({
+          id: child.key || '',
+          ticketId: String(val.ticketId || ''),
+          deviceId: String(val.deviceId || ''),
+          deviceName: String(val.deviceName || ''),
+          scannedAt: String(val.scannedAt || ''),
+          outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
+          message: String(val.message || '')
+        });
+      });
+      // Sort descending by scannedAt
+      list.sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
+      setScanLogs(list);
+    }, (err) => {
+      setError('Failed to subscribe to scan logs updates: ' + err.message);
+    });
+
+    return () => {
+      unsubscribeControllers();
+      unsubscribeLogs();
+    };
+  }, [authChecked, isAuthorized, firebaseAuthReady]);
 
   // Handle register controller
   const handleRegister = async (e: React.FormEvent) => {

@@ -13,12 +13,15 @@ import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
-// Sample museum list (will be replaced by API/data source later)
-const MUSEUMS = [
-  { museum_id: 'national_museum', name: 'National Museum', location: 'New Delhi', category: 'History/Art', price: 200 },
-  { museum_id: 'indian_museum', name: 'Indian Museum', location: 'Kolkata', category: 'Multi-purpose', price: 180 },
-  { museum_id: 'salar_jung', name: 'Salar Jung Museum', location: 'Hyderabad', category: 'Art/Antiques', price: 220 }
-];
+type MuseumOption = {
+  museum_id: string;
+  name: string;
+  location: string;
+  state?: string;
+  category: string;
+  price: number;
+  prices?: Record<string, number>;
+};
 
 const VISITOR_TYPES = [
   { value: 'Student', label: 'Student', price: 120 },
@@ -97,8 +100,8 @@ function BookTicket() {
   const [touchedPhone, setTouchedPhone] = useState(false);
   const [touchedDate, setTouchedDate] = useState(false);
   const [touchedTickets, setTouchedTickets] = useState(false);
-  const [museums, setMuseums] = useState(MUSEUMS);
-  const [selectedMuseumId, setSelectedMuseumId] = useState(MUSEUMS[0].museum_id);
+  const [museums, setMuseums] = useState<MuseumOption[]>([]);
+  const [selectedMuseumId, setSelectedMuseumId] = useState('');
   const [museumQuery, setMuseumQuery] = useState('');
   const [museumSearchOpen, setMuseumSearchOpen] = useState(false);
   const [visitorCombo, setVisitorCombo] = useState<Record<string, number>>({});
@@ -215,6 +218,7 @@ function BookTicket() {
 
   const validate = () => {
     const e: string[] = [];
+    if (!selectedMuseum) e.push('No museums are available for booking.');
     if (!fullName.trim()) e.push('Full name is required.');
     if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) e.push('A valid email is required.');
     if (!phone.trim()) e.push('Phone number is required.');
@@ -247,6 +251,8 @@ function BookTicket() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    if (!selectedMuseum) return;
+    const museum = selectedMuseum;
     setLoading(true);
     setErrors([]);
 
@@ -260,15 +266,49 @@ function BookTicket() {
         numberOfTickets: tickets,
         visitorType: visitorType,
         visitorCombo: visitorCombo,
-        museumId: selectedMuseum.museum_id,
-        museumName: selectedMuseum.name,
-        museumLocation: selectedMuseum.location,
-        museumCategory: selectedMuseum.category,
+        museumId: museum.museum_id,
+        museumName: museum.name,
+        museumLocation: museum.location,
+        museumCategory: museum.category,
         pricePerTicket: total / (tickets || 1),
         totalPrice: total
       };
 
       const orderResponse = await createRazorpayOrder(bookingPayload);
+      if (orderResponse.demoMode) {
+        const demoPaymentId = `pay_demo_${Date.now()}`;
+        const verified = await verifyRazorpayPayment({
+          booking: bookingPayload,
+          razorpayOrderId: orderResponse.order.id,
+          razorpayPaymentId: demoPaymentId,
+          razorpaySignature: 'demo_signature',
+          demoMode: true
+        });
+
+        setSuccess({
+          id: verified.booking.bookingId,
+          summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} â€” â‚¹${verified.booking.totalAmount} (demo payment)`
+        });
+
+        try {
+          const mod = await import('canvas-confetti');
+          const confetti = (mod && (mod.default || mod)) as any;
+          confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+        } catch {
+          // ignore if confetti isn't available
+        }
+
+        const profile = readBookingProfile();
+        setFullName(profile.name);
+        setEmail(profile.email);
+        setPhone(profile.phone);
+        setDate('');
+        setTime(TIME_SLOTS[0]);
+        setSelectedMuseumId(uniqueMuseums[0]?.museum_id || '');
+        setVisitorCombo({});
+        setLoading(false);
+        return;
+      }
 
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
@@ -285,7 +325,7 @@ function BookTicket() {
         amount: orderResponse.order.amount,
         currency: orderResponse.order.currency,
         name: 'Bharat Museum Tickets',
-        description: `${selectedMuseum.name} ticket booking`,
+        description: `${museum.name} ticket booking`,
         order_id: orderResponse.order.id,
         prefill: {
           name: fullName,
@@ -293,9 +333,9 @@ function BookTicket() {
           contact: phone
         },
         notes: {
-          museumName: selectedMuseum.name,
-          museumLocation: selectedMuseum.location,
-          museumCategory: selectedMuseum.category,
+          museumName: museum.name,
+          museumLocation: museum.location,
+          museumCategory: museum.category,
           visitorType,
           numberOfTickets: String(tickets)
         },
@@ -322,7 +362,7 @@ function BookTicket() {
 
             setSuccess({
               id: verified.booking.bookingId,
-              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || selectedMuseum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`
+              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`
             });
 
             try {
@@ -339,7 +379,7 @@ function BookTicket() {
             setPhone(profile.phone);
             setDate('');
             setTime(TIME_SLOTS[0]);
-            setSelectedMuseumId(uniqueMuseums[0]?.museum_id || MUSEUMS[0].museum_id);
+            setSelectedMuseumId(uniqueMuseums[0]?.museum_id || '');
             setVisitorCombo({});
           } catch (paymentError) {
             setErrors([(paymentError as Error).message || 'Payment verification failed. Please contact support.']);
@@ -356,7 +396,7 @@ function BookTicket() {
     }
   };
 
-  // Fetch museums list from public JSON (optional). Fall back to embedded list.
+  // Fetch the booking catalog from Firestore via the museums API.
   React.useEffect(() => {
     let mounted = true;
     fetch('/api/museums')
@@ -373,10 +413,16 @@ function BookTicket() {
           );
           setMuseums(dedupedData);
           setSelectedMuseumId((prev) => dedupedData.find((m: any) => m.museum_id === prev)?.museum_id || dedupedData[0].museum_id);
+        } else {
+          setMuseums([]);
+          setSelectedMuseumId('');
+          setMuseumQuery('');
         }
       })
       .catch(() => {
-        // ignore, keep default MUSEUMS
+        setMuseums([]);
+        setSelectedMuseumId('');
+        setMuseumQuery('');
       });
     return () => { mounted = false };
   }, []);
@@ -496,10 +542,16 @@ function BookTicket() {
                 </div>
               ) : null}
             </div>
-            <div className="mt-2 text-sm text-muted-foreground">
-              <div>{selectedMuseum.name} • {selectedMuseum.location}</div>
-              <div className="text-xs">Category: {selectedMuseum.category}</div>
-            </div>
+            {selectedMuseum ? (
+              <div className="mt-2 text-sm text-muted-foreground">
+                <div>{selectedMuseum.name} • {selectedMuseum.location}</div>
+                <div className="text-xs">Category: {selectedMuseum.category}</div>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-muted-foreground">
+                No Firestore museums are available for booking.
+              </div>
+            )}
           </div>
         </div>
 

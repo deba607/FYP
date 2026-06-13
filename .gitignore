@@ -1,27 +1,75 @@
 # Dependencies
+node_modules/
 client/node_modules/
 
-# Next.js build outputs
+# Python environments and caches
+.venv/
+venv/
+env/
+chatbot-engine/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Next.js build outputs and caches
 client/.next/
 client/out/
+client/.turbo/
+client/.vercel/
+client/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Firebase local runtime/cache
+.firebase/
+client/.firebase/
+firebase-debug.log
+firestore-debug.log
+database-debug.log
+ui-debug.log
 
 # Local env files
-client/.env*
-client/.env.local
-client/.env*.local
+.env
+.env.*
+client/.env
+client/.env.*
+!.env.example
+!.env.*.example
+!client/.env.example
+!client/.env.*.example
 
 # Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 client/npm-debug.log*
 client/yarn-debug.log*
 client/yarn-error.log*
 client/pnpm-debug.log*
 
 # Chatbot SQLite runtime files
+*.db
+*.db-shm
+*.db-wal
 chatbot-engine/*.db
 chatbot-engine/*.db-shm
 chatbot-engine/*.db-wal
 
+# Temporary/debug files
+*.tmp
+*.temp
+*.bak
+diff.txt
+client/scratch_*.cjs
+
 # OS/editor
 .DS_Store
 Thumbs.db
+Desktop.ini
+.idea/
 .vscode/

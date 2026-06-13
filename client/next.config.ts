@@ -13,14 +13,18 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'res.cloudinary.com',
       },
-    ],
-    // Allow common storage/profile image hosts used by Firebase and Cloudinary
-    domains: [
-      'lh3.googleusercontent.com',
-      'res.cloudinary.com',
-      'firebasestorage.googleapis.com',
-      'storage.googleapis.com',
-      'bharat-museum-tickets.firebasestorage.app',
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'bharat-museum-tickets.firebasestorage.app',
+      },
     ],
   },
   eslint: {

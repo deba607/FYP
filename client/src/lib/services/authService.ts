@@ -43,6 +43,17 @@ type CompleteProfileInput = {
   photoURL?: string;
 };
 
+type OtpData = {
+  otp: string;
+  expiresAt: Date;
+  userDocId: string;
+};
+
+const globalForOtp = global as unknown as { otpCache?: Map<string, OtpData> };
+const otpCache = globalForOtp.otpCache ?? new Map<string, OtpData>();
+if (process.env.NODE_ENV !== 'production') globalForOtp.otpCache = otpCache;
+
+
 function mapFirestoreError(error: unknown, fallbackMessage: string): ApiError {
   const message = error instanceof Error ? error.message : '';
   const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
@@ -209,12 +220,14 @@ export async function loginUser(input: LoginInput) {
   }
 
   const token = createToken(userDoc.id, user.email || userDoc.id);
+  const firebaseCustomToken = await getFirebaseAuth().createCustomToken(userDoc.id, { role: user.role });
   void logUserActivity(userDoc.id, user.email || 'None', 'Auth', 'login', 'User logged in successfully using credentials');
 
   return {
     success: true,
     message: 'Login successful',
     token,
+    firebaseCustomToken,
     user: {
       id: userDoc.id,
       name: user.name,
@@ -624,9 +637,8 @@ export async function sendOtp(emailOrId: string, purpose: 'registration' | 'forg
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
-  // Save to otps collection
-  await firestore.collection('otps').doc(email.toLowerCase()).set({
-    email: email.toLowerCase(),
+  // Save to in-memory cache
+  otpCache.set(email.toLowerCase(), {
     otp,
     expiresAt,
     userDocId
@@ -654,18 +666,17 @@ export async function verifyOtp(emailOrId: string, otp: string) {
     }
   }
 
-  const otpDoc = await firestore.collection('otps').doc(email).get();
-  if (!otpDoc.exists) {
+  const data = otpCache.get(email);
+  if (!data) {
     throw new ApiError('No verification code request found for this email.', 400);
   }
 
-  const data = otpDoc.data();
-  if (data?.otp !== otp.trim()) {
+  if (data.otp !== otp.trim()) {
     throw new ApiError('Invalid verification code.', 400);
   }
 
-  const expiresAt = data.expiresAt?.toDate?.() || new Date(data.expiresAt);
-  if (new Date() > expiresAt) {
+  if (new Date() > data.expiresAt) {
+    otpCache.delete(email);
     throw new ApiError('Verification code has expired.', 400);
   }
 
@@ -716,8 +727,8 @@ export async function resetPasswordWithOtp(emailOrId: string, otp: string, passw
     updatedAt: new Date()
   });
 
-  // Delete the OTP document
-  await firestore.collection('otps').doc(email).delete();
+  // Delete the OTP from in-memory cache
+  otpCache.delete(email);
 
   void logUserActivity(userDocId, email, 'Auth', 'password_reset_otp', 'Password reset successfully using OTP verification');
 

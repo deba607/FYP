@@ -19,11 +19,7 @@ function getRazorpayCredentials() {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-  if (!keyId || !keySecret) {
-    throw new ApiError('Razorpay configuration is missing', 500);
-  }
-
-  return { keyId, keySecret };
+  return keyId && keySecret ? { keyId, keySecret } : null;
 }
 
 function getBasicAuthHeader(keyId: string, keySecret: string) {
@@ -73,9 +69,32 @@ export async function POST(req: NextRequest) {
       throw new ApiError('Unable to calculate payment amount', 400);
     }
 
-    const { keyId, keySecret } = getRazorpayCredentials();
     const currency = 'INR';
     const receipt = `rcpt_${Date.now()}`;
+    const credentials = getRazorpayCredentials();
+
+    if (!credentials) {
+      return jsonSuccess(
+        {
+          success: true,
+          demoMode: true,
+          keyId: 'demo_razorpay_key',
+          order: {
+            id: `order_demo_${Date.now()}`,
+            amount: Math.round(totalAmount * 100),
+            currency,
+            receipt,
+            status: 'created'
+          },
+          amount: totalAmount,
+          currency,
+          pricePerTicket
+        },
+        200
+      );
+    }
+
+    const { keyId, keySecret } = credentials;
 
     const response = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',

@@ -69,6 +69,7 @@ export type BookingResponse = {
 
 export type RazorpayOrderResponse = {
   success: boolean;
+  demoMode?: boolean;
   keyId: string;
   order: {
     id: string;
@@ -93,6 +94,7 @@ export async function verifyRazorpayPayment(payload: {
   razorpayOrderId: string;
   razorpayPaymentId: string;
   razorpaySignature: string;
+  demoMode?: boolean;
 }) {
   return apiFetch<{ success: boolean; message: string; booking: BookingResponse }>(
     `${API_BASE_URL}/payments/razorpay/verify`,

@@ -1,4 +1,4 @@
-import { getFirebaseFirestore } from '../config/firebaseAdmin';
+import { getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 
 export type UserActivity = {
   id: string;
@@ -31,53 +31,56 @@ export async function logUserActivity(
   details: string
 ) {
   try {
-    const firestore = getFirebaseFirestore();
-    const ref = firestore.collection('user_activities').doc();
+    const db = getFirebaseRealtimeDatabase();
     const now = new Date();
 
     const normalizedEmail = String(email || 'guest').trim().toLowerCase();
 
-    await ref.set({
+    await db.ref('user_activities').push({
       userId: userId || null,
       email: normalizedEmail,
       category,
       action: action.trim(),
       details: details.trim(),
-      timestamp: now
+      timestamp: now.toISOString()
     });
   } catch (err) {
-    console.error('Failed to write user activity log to Firestore:', err);
+    console.error('Failed to write user activity log to Realtime Database:', err);
   }
 }
 
 export async function getUserActivities() {
   try {
-    const firestore = getFirebaseFirestore();
-    const snapshot = await firestore
-      .collection('user_activities')
-      .orderBy('timestamp', 'desc')
-      .limit(200)
-      .get();
+    const db = getFirebaseRealtimeDatabase();
+    const snapshot = await db
+      .ref('user_activities')
+      .orderByChild('timestamp')
+      .limitToLast(200)
+      .once('value');
 
-    const activities = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        userId: data.userId || null,
-        email: String(data.email || 'guest'),
-        category: String(data.category || 'Auth') as UserActivity['category'],
-        action: String(data.action || ''),
-        details: String(data.details || ''),
-        timestamp: toDateString(data.timestamp)
-      };
+    const activities: UserActivity[] = [];
+    snapshot.forEach((child) => {
+      const val = child.val();
+      activities.push({
+        id: child.key || '',
+        userId: val.userId || null,
+        email: String(val.email || 'guest'),
+        category: String(val.category || 'Auth') as UserActivity['category'],
+        action: String(val.action || ''),
+        details: String(val.details || ''),
+        timestamp: toDateString(val.timestamp)
+      });
     });
+
+    // Reverse to get descending order (newest first)
+    activities.reverse();
 
     return {
       success: true,
       activities
     };
   } catch (error) {
-    console.error('Failed to fetch user activities from Firestore:', error);
+    console.error('Failed to fetch user activities from Realtime Database:', error);
     throw error;
   }
 }

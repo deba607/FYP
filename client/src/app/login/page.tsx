@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithCustomToken } from 'firebase/auth';
 import { login, signupWithGoogle, sendOtp, resetPassword } from '../../lib/api';
 import { getFirebaseClientAuth, getGoogleProvider } from '../../lib/config/firebaseClient';
 
@@ -48,6 +48,7 @@ export default function LoginPage() {
       setLoading(true);
       const result = await login(email.trim(), password) as {
         token?: string;
+        firebaseCustomToken?: string;
         user?: {
           id: string;
           name: string;
@@ -61,6 +62,11 @@ export default function LoginPage() {
       // Verify role matches selected role
       if (result.user && result.user.role !== role) {
         throw new Error(`Access denied. Your account does not have "${role}" privileges.`);
+      }
+
+      if (result.firebaseCustomToken) {
+        const auth = getFirebaseClientAuth();
+        await signInWithCustomToken(auth, result.firebaseCustomToken);
       }
 
       if (typeof window !== 'undefined') {
