@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import QRCode from 'qrcode';
 
 export type BookingInfo = {
   bookingId: string;
@@ -90,6 +91,17 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
     const museumName = booking.museumName || 'Bharat Museum';
     const museumLocation = booking.museumLocation || '';
     const museumDisplay = museumLocation ? `${museumName} (${museumLocation})` : museumName;
+    const qrDataUrl = await QRCode.toDataURL(booking.bookingId, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 220,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    });
+    const qrBase64 = qrDataUrl.split(',')[1] || '';
+    const qrCid = `ticket-qr-${booking.bookingId}@bharat-museum`;
 
     // Premium designed HTML receipt template
     const htmlContent = `
@@ -189,6 +201,26 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
       color: #fbbf24;
       margin-top: 5px;
       letter-spacing: 0.5px;
+    }
+    .qr-block {
+      background-color: #ffffff;
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 25px;
+      text-align: center;
+      border: 1px solid #334155;
+    }
+    .qr-block img {
+      width: 180px;
+      height: 180px;
+      display: block;
+      margin: 0 auto;
+    }
+    .qr-caption {
+      color: #334155;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 10px;
     }
     .detail-grid {
       width: 100%;
@@ -301,6 +333,11 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
           <div class="booking-id-value">${booking.bookingId}</div>
         </div>
 
+        <div class="qr-block">
+          <img src="cid:${qrCid}" alt="QR code for booking ${booking.bookingId}" />
+          <div class="qr-caption">Scan this QR code at the museum gate</div>
+        </div>
+
         <h3 class="section-title">Visitor Details</h3>
         <table class="detail-grid">
           <tr>
@@ -375,7 +412,7 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
         <div class="guidelines">
           <h4>📌 Important Visitor Guidelines</h4>
           <ul>
-            <li><strong>Entry Verification:</strong> Please bring a digital or printed copy of this email containing your Booking ID.</li>
+            <li><strong>Entry Verification:</strong> Please bring a digital or printed copy of this email containing your QR code and Booking ID.</li>
             <li><strong>Discounts Eligibility:</strong> If you booked under a student or senior citizen category, please present a valid ID card at the entrance gate.</li>
             <li><strong>Timeliness:</strong> We suggest arriving 15 minutes before your scheduled time slot to facilitate smooth validation.</li>
             <li><strong>Timing:</strong> General visiting hours are 9:00 AM to 6:00 PM. Museum is closed on Mondays.</li>
@@ -397,8 +434,18 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
       from: `"Bharat Museum Tickets" <${fromEmail}>`,
       to: toEmail,
       subject: `🎟️ Ticket Confirmed: ${museumName} - ID: ${booking.bookingId}`,
-      text: `Your ticket booking has been confirmed!\n\nBooking ID: ${booking.bookingId}\nMuseum: ${museumDisplay}\nDate: ${booking.visitDate}\nTime: ${booking.timeSlot}\nTickets: ${booking.numberOfTickets} (${booking.visitorType})\nTotal Paid: ₹${booking.totalAmount}\n\nEnjoy your visit!`,
-      html: htmlContent
+      text: `Your ticket booking has been confirmed!\n\nBooking ID / QR value: ${booking.bookingId}\nMuseum: ${museumDisplay}\nDate: ${booking.visitDate}\nTime: ${booking.timeSlot}\nTickets: ${booking.numberOfTickets} (${booking.visitorType})\nTotal Paid: ₹${booking.totalAmount}\n\nShow the QR code in this email or use the Booking ID at the gate.\n\nEnjoy your visit!`,
+      html: htmlContent,
+      attachments: qrBase64
+        ? [
+            {
+              filename: `ticket-${booking.bookingId}-qr.png`,
+              content: Buffer.from(qrBase64, 'base64'),
+              cid: qrCid,
+              contentType: 'image/png'
+            }
+          ]
+        : []
     };
 
     const info = await transporter.sendMail(mailOptions);

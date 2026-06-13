@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { getBookingByBookingId } from '../../lib/api';
 
 import { Search } from 'lucide-react';
@@ -19,6 +20,36 @@ export default function ShowTicket() {
   const [result, setResult] = useState<BookingLookupResult | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    if (!result?.bookingId) {
+      setQrDataUrl('');
+      return;
+    }
+
+    QRCode.toDataURL(result.bookingId, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 220,
+      color: {
+        dark: '#111827',
+        light: '#ffffff'
+      }
+    })
+      .then((url) => {
+        if (active) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [result?.bookingId]);
 
   const lookup = async () => {
     setError('');
@@ -69,6 +100,18 @@ export default function ShowTicket() {
         <div className="rounded border bg-background p-4 max-w-lg mx-auto">
           <div className="mb-2 text-sm text-muted-foreground">Booking ID</div>
           <div className="mb-2 font-mono font-semibold">{result.bookingId}</div>
+
+          {qrDataUrl && (
+            <div className="mb-4 rounded-lg border bg-white p-4 text-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qrDataUrl}
+                alt={`QR code for booking ${result.bookingId}`}
+                className="mx-auto h-44 w-44"
+              />
+              <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

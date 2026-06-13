@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 import re
+import difflib
 from chatterbot import ChatBot
 from chatterbot.trainers import ListTrainer
 from .intent_classifier import IntentClassifier
@@ -113,6 +114,15 @@ class MuseumAssistant:
             logger.warning("Unable to load Firestore museums from %s/api/museums: %s", api_base, err)
 
         return museums
+
+    def refresh_museums_from_firestore_api(self) -> None:
+        """Refresh museum data so chatbot search reflects current Firestore records."""
+        museums = self.load_museums_from_firestore_api()
+        if museums:
+            self.museums_data = museums
+
+    def normalize_place_text(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
     def train_bot(self):
         """Train the chatbot with museum-specific conversations"""
@@ -324,6 +334,7 @@ class MuseumAssistant:
     def process_message(self, message: str, session_id: str = "default", language: str = "en") -> Dict[str, Any]:
         session = self.get_or_create_session(session_id)
         session["language"] = language
+        self.refresh_museums_from_firestore_api()
         
         # Classify intent
         intent = self.intent_classifier.classify(message)
@@ -683,15 +694,20 @@ class MuseumAssistant:
 
     def extract_location(self, text: str) -> str:
         """Extract a valid city or state/UT name from the text using loaded museum data"""
-        normalized_text = text.lower().strip()
+        normalized_text = self.normalize_place_text(text)
         
         cities = set()
         states = set()
         for m in self.museums_data:
             if m.get('location'):
-                cities.add(m['location'].lower())
+                cities.add(self.normalize_place_text(m['location']))
             if m.get('state'):
-                states.add(m['state'].lower())
+                states.add(self.normalize_place_text(m['state']))
+
+        place_candidates = sorted([value for value in cities.union(states) if value], key=len, reverse=True)
+
+        phrase_match = re.search(r"\b(?:in|near|at)\s+([a-z0-9 ]+?)(?:\s+museums?|\s+museum|\?|$)", normalized_text)
+        requested_place = phrase_match.group(1).strip() if phrase_match else ""
         
         for state in sorted(states, key=len, reverse=True):
             if re.search(r'\b' + re.escape(state) + r'\b', normalized_text):
@@ -707,6 +723,18 @@ class MuseumAssistant:
         for city in sorted(cities, key=len, reverse=True):
             if len(city) >= 3 and city in normalized_text:
                 return city
+
+        if requested_place:
+            close = difflib.get_close_matches(requested_place, place_candidates, n=1, cutoff=0.74)
+            if close:
+                return close[0]
+            return requested_place
+
+        words = [word for word in normalized_text.split() if len(word) >= 3]
+        for word in words:
+            close = difflib.get_close_matches(word, place_candidates, n=1, cutoff=0.82)
+            if close:
+                return close[0]
                 
         return ""
 
@@ -725,12 +753,18 @@ class MuseumAssistant:
         return None
 
     def get_museums_by_location(self, location: str) -> List[Dict[str, Any]]:
-        loc = location.lower().strip()
+        loc = self.normalize_place_text(location)
         results = []
         for m in self.museums_data:
-            city = (m.get('location') or '').lower()
-            state = (m.get('state') or '').lower()
-            if city == loc or state == loc:
+            city = self.normalize_place_text(m.get('location') or '')
+            state = self.normalize_place_text(m.get('state') or '')
+            searchable = [value for value in [city, state] if value]
+            if (
+                city == loc or
+                state == loc or
+                any(loc and (loc in value or value in loc) for value in searchable) or
+                any(difflib.SequenceMatcher(None, loc, value).ratio() >= 0.82 for value in searchable)
+            ):
                 results.append(m)
         return sorted(results, key=lambda m: ((m.get('location') or ''), (m.get('name') or '')))
 

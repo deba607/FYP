@@ -22,7 +22,7 @@ type PremiumTeamProps = {
   className?: string;
 };
 
-const dami_data: TeamMember[] = [
+const teamData: TeamMember[] = [
   {
     id: 1,
     name: 'Souvik Gon',
@@ -68,7 +68,7 @@ const dami_data: TeamMember[] = [
 export default function Team9({
   title = 'Partnered with most of the',
   subtitle = 'top people at each industry',
-  teamMembers = dami_data,
+  teamMembers = teamData,
   backgroundColor = '',
   textColor = '#ffff',
   className,

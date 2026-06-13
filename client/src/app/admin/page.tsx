@@ -18,7 +18,6 @@ import {
   Landmark,
   Sparkles,
   Upload,
-  AlertTriangle,
   Edit,
   Eye,
   EyeOff
@@ -219,8 +218,7 @@ export default function AdminDashboardPage() {
 
   // AI Image upload and analysis state
   const [analyzingImage, setAnalyzingImage] = useState(false);
-  const [analysisWarning, setAnalysisWarning] = useState('');
-  const [isSimulatedMode, setIsSimulatedMode] = useState(false);
+  const [, setAnalysisWarning] = useState('');
 
   const loadMuseumsList = useCallback(async () => {
     setMuseumsSuccess('Real-time museum sync active.');
@@ -254,8 +252,6 @@ export default function AdminDashboardPage() {
     setOtpSuccess('');
     setFormMode('register');
     setEditingId('');
-    setIsSimulatedMode(false);
-    setAnalysisWarning('');
   };
 
   const handleSendOtp = async () => {
@@ -552,8 +548,7 @@ export default function AdminDashboardPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             image: base64,
-            mimeType: file.type,
-            filename: file.name
+            mimeType: file.type
           })
         });
 
@@ -563,7 +558,7 @@ export default function AdminDashboardPage() {
           throw new Error(data?.message || 'AI Image analysis failed');
         }
 
-        const { attributes, isSimulated, message } = data;
+        const { attributes } = data;
 
         // Auto-fill form fields
         setMuseumName(attributes.name || '');
@@ -580,12 +575,7 @@ export default function AdminDashboardPage() {
         setPriceProfessor(Number(extractedPrices.Professor ?? 180));
         setPriceResearcher(Number(extractedPrices["Researcher/Scientist"] ?? 180));
         
-        setIsSimulatedMode(isSimulated);
-        if (isSimulated) {
-          setAnalysisWarning(message || 'Running in simulation mode.');
-        } else {
-          setMuseumsSuccess('AI successfully extracted museum attributes from the image!');
-        }
+        setMuseumsSuccess('AI successfully extracted museum attributes from the image!');
       } catch (err) {
         setMuseumsError((err as Error).message || 'Failed to analyze image.');
       } finally {
@@ -1411,12 +1401,6 @@ export default function AdminDashboardPage() {
                     )}
                   </div>
 
-                  {analysisWarning && (
-                    <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200/50 bg-amber-50/50 p-3 text-xs text-amber-800 dark:border-amber-950/20 dark:bg-amber-950/20 dark:text-amber-300">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                      <div>{analysisWarning}</div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Form Card */}

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,7 +19,11 @@ import {
   WifiOff,
   History,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Ticket,
+  Users,
+  IndianRupee,
+  X
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
 import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
@@ -45,6 +50,54 @@ type ScanLog = {
   message: string;
 };
 
+type Booking = {
+  _id: string;
+  bookingId: string;
+  name: string;
+  email: string;
+  phone: string;
+  visitDate: string;
+  timeSlot: string;
+  numberOfTickets: number;
+  visitorType: string;
+  visitorCombo: Record<string, number> | null;
+  totalAmount: number;
+  museumId: string | null;
+  museumName: string | null;
+  museumLocation: string | null;
+  museumCategory: string | null;
+  paymentStatus: string;
+  status: string;
+  createdAt: string;
+};
+
+type MuseumRecord = {
+  id: string;
+  museum_id: string;
+  name: string;
+  location: string;
+  state?: string;
+  loginEmail?: string;
+};
+
+type VisitorStat = {
+  email: string;
+  name: string;
+  phone: string;
+  totalBookings: number;
+  totalTickets: number;
+  totalSpent: number;
+  lastVisit: string;
+};
+
+type DetailModalKind = 'controllers' | 'activeDevices' | 'bookings' | 'visitors' | 'revenue' | 'scans' | 'approvalRate';
+
+type DetailModalContent = {
+  title: string;
+  subtitle: string;
+  body: ReactNode;
+};
+
 type StoredUser = {
   name?: string;
   email?: string;
@@ -64,6 +117,48 @@ function formatDate(value: string) {
   });
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
+}
+
+function toBooking(id: string, val: any): Booking {
+  return {
+    _id: id,
+    bookingId: String(val.bookingId || id),
+    name: String(val.name || ''),
+    email: String(val.email || ''),
+    phone: String(val.phone || ''),
+    visitDate: String(val.visitDate || ''),
+    timeSlot: String(val.timeSlot || ''),
+    numberOfTickets: Number(val.numberOfTickets || 0),
+    visitorType: String(val.visitorType || 'Adult'),
+    visitorCombo: val.visitorCombo && typeof val.visitorCombo === 'object' ? val.visitorCombo : null,
+    totalAmount: Number(val.totalAmount || 0),
+    museumId: val.museumId ? String(val.museumId) : null,
+    museumName: val.museumName ? String(val.museumName) : null,
+    museumLocation: val.museumLocation ? String(val.museumLocation) : null,
+    museumCategory: val.museumCategory ? String(val.museumCategory) : null,
+    paymentStatus: String(val.paymentStatus || 'pending'),
+    status: String(val.status || 'confirmed'),
+    createdAt: String(val.createdAt || '')
+  };
+}
+
+function formatVisitorBreakdown(booking: Booking) {
+  if (booking.visitorCombo && Object.keys(booking.visitorCombo).length > 0) {
+    return Object.entries(booking.visitorCombo)
+      .filter(([, count]) => Number(count) > 0)
+      .map(([type, count]) => `${count} x ${type}`)
+      .join(', ');
+  }
+
+  return `${booking.numberOfTickets} x ${booking.visitorType}`;
+}
+
 export default function MuseumDashboardPage() {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -72,11 +167,15 @@ export default function MuseumDashboardPage() {
   // States
   const [controllers, setControllers] = useState<ControllerDevice[]>([]);
   const [scanLogs, setScanLogs] = useState<ScanLog[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [museums, setMuseums] = useState<MuseumRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [museumsLoading, setMuseumsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'controllers' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'visitors' | 'controllers' | 'logs'>('overview');
+  const [detailModal, setDetailModal] = useState<DetailModalKind | null>(null);
 
   // Register Form State
   const [deviceName, setDeviceName] = useState('');
@@ -86,6 +185,12 @@ export default function MuseumDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const isAuthorized = user?.role === 'admin' || user?.role === 'museum';
+  const signedInEmail = user?.email?.trim().toLowerCase() || '';
+  const currentMuseum = useMemo(() => {
+    if (!signedInEmail) return null;
+    return museums.find((museum) => museum.loginEmail?.trim().toLowerCase() === signedInEmail) || null;
+  }, [museums, signedInEmail]);
+  const shouldRestrictToCurrentMuseum = user?.role === 'museum';
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -142,6 +247,35 @@ export default function MuseumDashboardPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!authChecked || !isAuthorized || !firebaseAuthReady) return;
+
+    let mounted = true;
+    setMuseumsLoading(true);
+    fetch('/api/museums')
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Unable to load museums');
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!mounted) return;
+        setMuseums(Array.isArray(payload?.museums) ? payload.museums : []);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setError((err as Error).message || 'Unable to load museum profile.');
+      })
+      .finally(() => {
+        if (mounted) setMuseumsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authChecked, isAuthorized, firebaseAuthReady]);
 
   const fetchData = useCallback(async () => {
     setSuccess('Real-time sync active. Data is up to date.');
@@ -201,9 +335,23 @@ export default function MuseumDashboardPage() {
       setError('Failed to subscribe to scan logs updates: ' + err.message);
     });
 
+    // Set up bookings listener
+    const bookingsRef = databaseQuery(ref(db, 'bookings'), orderByChild('createdAt'));
+    const unsubscribeBookings = onValue(bookingsRef, (snapshot) => {
+      const list: Booking[] = [];
+      snapshot.forEach((child) => {
+        list.push(toBooking(child.key || '', child.val()));
+      });
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setBookings(list);
+    }, (err) => {
+      setError('Failed to subscribe to bookings updates: ' + err.message);
+    });
+
     return () => {
       unsubscribeControllers();
       unsubscribeLogs();
+      unsubscribeBookings();
     };
   }, [authChecked, isAuthorized, firebaseAuthReady]);
 
@@ -329,6 +477,260 @@ export default function MuseumDashboardPage() {
     );
   }, [scanLogs, searchQuery]);
 
+  const scopedBookings = useMemo(() => {
+    if (!shouldRestrictToCurrentMuseum) {
+      return bookings;
+    }
+
+    if (!currentMuseum) {
+      return [];
+    }
+
+    const museumIds = new Set(
+      [currentMuseum.id, currentMuseum.museum_id]
+        .filter(Boolean)
+        .map((value) => value.toLowerCase())
+    );
+    const museumName = currentMuseum.name.trim().toLowerCase();
+    const museumLocation = currentMuseum.location.trim().toLowerCase();
+
+    return bookings.filter((booking) => {
+      const bookingMuseumId = booking.museumId?.trim().toLowerCase() || '';
+      if (bookingMuseumId && museumIds.has(bookingMuseumId)) {
+        return true;
+      }
+
+      const bookingMuseumName = booking.museumName?.trim().toLowerCase() || '';
+      const bookingMuseumLocation = booking.museumLocation?.trim().toLowerCase() || '';
+      return Boolean(
+        museumName &&
+        bookingMuseumName === museumName &&
+        (!museumLocation || !bookingMuseumLocation || bookingMuseumLocation === museumLocation)
+      );
+    });
+  }, [bookings, currentMuseum, shouldRestrictToCurrentMuseum]);
+
+  const filteredBookings = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return scopedBookings;
+    return scopedBookings.filter((booking) =>
+      [
+        booking.bookingId,
+        booking.name,
+        booking.email,
+        booking.phone,
+        booking.museumName || '',
+        booking.museumLocation || '',
+        booking.visitorType,
+        booking.status,
+        booking.paymentStatus
+      ].some((value) => value.toLowerCase().includes(needle))
+    );
+  }, [scopedBookings, searchQuery]);
+
+  const visitorStats = useMemo<VisitorStat[]>(() => {
+    const stats = new Map<string, VisitorStat>();
+
+    scopedBookings.forEach((booking) => {
+      const emailKey = booking.email.trim().toLowerCase() || `guest-${booking.bookingId}`;
+      const existing = stats.get(emailKey);
+      if (existing) {
+        existing.totalBookings += 1;
+        existing.totalTickets += Number(booking.numberOfTickets || 0);
+        existing.totalSpent += Number(booking.totalAmount || 0);
+        if (new Date(booking.visitDate) > new Date(existing.lastVisit)) {
+          existing.lastVisit = booking.visitDate;
+        }
+        return;
+      }
+
+      stats.set(emailKey, {
+        email: booking.email || 'Guest visitor',
+        name: booking.name || 'Guest',
+        phone: booking.phone || '-',
+        totalBookings: 1,
+        totalTickets: Number(booking.numberOfTickets || 0),
+        totalSpent: Number(booking.totalAmount || 0),
+        lastVisit: booking.visitDate || booking.createdAt || '-'
+      });
+    });
+
+    return Array.from(stats.values()).sort((a, b) => new Date(b.lastVisit).getTime() - new Date(a.lastVisit).getTime());
+  }, [scopedBookings]);
+
+  const filteredVisitors = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return visitorStats;
+    return visitorStats.filter((visitor) =>
+      [visitor.name, visitor.email, visitor.phone].some((value) => value.toLowerCase().includes(needle))
+    );
+  }, [visitorStats, searchQuery]);
+
+  const bookingMetrics = useMemo(() => {
+    const confirmed = scopedBookings.filter((booking) => booking.status === 'confirmed');
+    return {
+      totalBookings: scopedBookings.length,
+      confirmedBookings: confirmed.length,
+      totalTickets: confirmed.reduce((sum, booking) => sum + Number(booking.numberOfTickets || 0), 0),
+      revenue: confirmed.reduce((sum, booking) => sum + Number(booking.totalAmount || 0), 0),
+      uniqueVisitors: visitorStats.length
+    };
+  }, [scopedBookings, visitorStats]);
+
+  const detailModalContent = useMemo<DetailModalContent | null>(() => {
+    if (!detailModal) return null;
+
+    const empty = (message: string) => (
+      <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        {message}
+      </div>
+    );
+
+    const controllerList = (items: ControllerDevice[]) => (
+      items.length === 0 ? empty('No controllers found.') : (
+        <div className="space-y-2">
+          {items.map((device) => (
+            <div key={device.id} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-foreground">{device.name}</div>
+                  <div className="mt-1 text-xs text-muted-foreground font-mono">{device.id}</div>
+                </div>
+                <span className="rounded-full border px-2 py-0.5 text-xs capitalize">{device.status}</span>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">Museum ref: {device.museumId || '-'}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Last sync: {formatDate(device.lastActive)}</div>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+    const bookingList = (items: Booking[]) => (
+      items.length === 0 ? empty('No bookings found for this museum.') : (
+        <div className="space-y-2">
+          {items.map((booking) => (
+            <div key={booking._id} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-foreground">{booking.bookingId}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{booking.name || 'Guest'} · {booking.email || '-'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">{formatCurrency(booking.totalAmount)}</div>
+                  <div className="text-xs text-muted-foreground">{booking.status}</div>
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">{formatDate(booking.visitDate)} · {booking.timeSlot}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{formatVisitorBreakdown(booking)}</div>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+    const visitorList = (items: VisitorStat[]) => (
+      items.length === 0 ? empty('No visitors found for this museum.') : (
+        <div className="space-y-2">
+          {items.map((visitor) => (
+            <div key={visitor.email} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-foreground">{visitor.name}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{visitor.email}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{visitor.phone}</div>
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  <div>{visitor.totalBookings} booking{visitor.totalBookings !== 1 ? 's' : ''}</div>
+                  <div>{visitor.totalTickets} ticket{visitor.totalTickets !== 1 ? 's' : ''}</div>
+                  <div className="font-semibold text-foreground">{formatCurrency(visitor.totalSpent)}</div>
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">Last visit: {formatDate(visitor.lastVisit)}</div>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+    const scanList = (items: ScanLog[]) => (
+      items.length === 0 ? empty('No scan logs found.') : (
+        <div className="space-y-2">
+          {items.map((log) => (
+            <div key={log.id} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-foreground">{log.ticketId}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{log.deviceName || log.deviceId}</div>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  log.outcome === 'granted'
+                    ? 'bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-300'
+                    : 'bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-300'
+                }`}>
+                  {log.outcome}
+                </span>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">{formatDate(log.scannedAt)}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{log.message || '-'}</div>
+            </div>
+          ))}
+        </div>
+      )
+    );
+
+    switch (detailModal) {
+      case 'controllers':
+        return {
+          title: 'Total Controllers',
+          subtitle: `${controllers.length} registered gate device${controllers.length !== 1 ? 's' : ''}`,
+          body: controllerList(controllers)
+        };
+      case 'activeDevices': {
+        const activeDevices = controllers.filter((device) => device.status === 'active');
+        return {
+          title: 'Active Devices',
+          subtitle: `${activeDevices.length} online controller${activeDevices.length !== 1 ? 's' : ''}`,
+          body: controllerList(activeDevices)
+        };
+      }
+      case 'bookings':
+        return {
+          title: 'Bookings',
+          subtitle: `${bookingMetrics.confirmedBookings} confirmed of ${bookingMetrics.totalBookings} total`,
+          body: bookingList(scopedBookings)
+        };
+      case 'visitors':
+        return {
+          title: 'Visitors',
+          subtitle: `${visitorStats.length} unique visitor${visitorStats.length !== 1 ? 's' : ''}`,
+          body: visitorList(visitorStats)
+        };
+      case 'revenue': {
+        const confirmedBookings = scopedBookings.filter((booking) => booking.status === 'confirmed');
+        return {
+          title: 'Revenue',
+          subtitle: `${formatCurrency(bookingMetrics.revenue)} from confirmed bookings`,
+          body: bookingList(confirmedBookings)
+        };
+      }
+      case 'scans':
+        return {
+          title: 'Gate Scans Today',
+          subtitle: `${metrics.successfulScans} approved | ${metrics.failedScans} rejected`,
+          body: scanList(scanLogs)
+        };
+      case 'approvalRate':
+        return {
+          title: 'Approval Rate',
+          subtitle: `${metrics.passRate}% granted across ${metrics.totalScans} scan${metrics.totalScans !== 1 ? 's' : ''}`,
+          body: scanList(scanLogs)
+        };
+      default:
+        return null;
+    }
+  }, [bookingMetrics, controllers, detailModal, metrics, scanLogs, scopedBookings, visitorStats]);
+
   if (!authChecked) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -414,11 +816,64 @@ export default function MuseumDashboardPage() {
               <span>{success}</span>
             </div>
           )}
+          {shouldRestrictToCurrentMuseum && !museumsLoading && !currentMuseum && (
+            <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <span>No Firestore museum is linked with {signedInEmail || 'this account'}. Add this email to the museum document `loginEmail` field to show its bookings and visitors.</span>
+            </div>
+          )}
+
+          <AnimatePresence>
+            {detailModalContent && (
+              <motion.div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="metric-detail-title"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setDetailModal(null);
+                  }
+                }}
+              >
+                <motion.div
+                  className="max-h-[86vh] w-full max-w-2xl overflow-hidden rounded-xl border bg-background shadow-2xl"
+                  initial={{ opacity: 0, y: 18, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 18, scale: 0.98 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <div className="flex items-start justify-between gap-4 border-b p-5">
+                    <div>
+                      <h2 id="metric-detail-title" className="text-xl font-bold text-foreground">
+                        {detailModalContent.title}
+                      </h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{detailModalContent.subtitle}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailModal(null)}
+                      className="rounded-lg border p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                      aria-label="Close details"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-[64vh] overflow-y-auto p-5">
+                    {detailModalContent.body}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Tab Navigation */}
           <div className="mb-6 border-b border-border/80 flex items-center justify-between">
             <div className="flex gap-4">
-              {(['overview', 'controllers', 'logs'] as const).map((tab) => (
+              {(['overview', 'bookings', 'visitors', 'controllers', 'logs'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => {
@@ -442,7 +897,15 @@ export default function MuseumDashboardPage() {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
-                  placeholder={activeTab === 'controllers' ? 'Search devices...' : 'Search scans...'}
+                  placeholder={
+                    activeTab === 'controllers'
+                      ? 'Search devices...'
+                      : activeTab === 'logs'
+                      ? 'Search scans...'
+                      : activeTab === 'visitors'
+                      ? 'Search visitors...'
+                      : 'Search bookings...'
+                  }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full rounded-lg border bg-background py-1.5 pl-9 pr-3 text-sm outline-hidden focus:ring-2 focus:ring-emerald-500/20"
@@ -463,16 +926,24 @@ export default function MuseumDashboardPage() {
                 className="space-y-6"
               >
                 {/* Stats Grid */}
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border bg-background p-5 shadow-xs">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('controllers')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-emerald-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Total Controllers</span>
                       <Sliders className="h-5 w-5 text-emerald-500" />
                     </div>
                     <p className="mt-2 text-3xl font-bold">{metrics.totalDevices}</p>
                     <p className="mt-1 text-xs text-muted-foreground">Registered gate devices</p>
-                  </div>
-                  <div className="rounded-xl border bg-background p-5 shadow-xs">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('activeDevices')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-emerald-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Active Devices</span>
                       <Wifi className="h-5 w-5 text-emerald-500" />
@@ -481,8 +952,48 @@ export default function MuseumDashboardPage() {
                       {metrics.activeDevices}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">Online and verifying QR codes</p>
-                  </div>
-                  <div className="rounded-xl border bg-background p-5 shadow-xs">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('bookings')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-blue-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Bookings</span>
+                      <Ticket className="h-5 w-5 text-blue-500" />
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">{bookingMetrics.totalBookings}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{bookingMetrics.confirmedBookings} confirmed</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('visitors')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-blue-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Visitors</span>
+                      <Users className="h-5 w-5 text-blue-500" />
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">{bookingMetrics.uniqueVisitors}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{bookingMetrics.totalTickets} tickets sold</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('revenue')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-emerald-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Revenue</span>
+                      <IndianRupee className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">{formatCurrency(bookingMetrics.revenue)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Confirmed bookings only</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('scans')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-teal-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Gate Scans Today</span>
                       <History className="h-5 w-5 text-teal-500" />
@@ -491,15 +1002,19 @@ export default function MuseumDashboardPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       {metrics.successfulScans} approved | {metrics.failedScans} rejected
                     </p>
-                  </div>
-                  <div className="rounded-xl border bg-background p-5 shadow-xs">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailModal('approvalRate')}
+                    className="rounded-xl border bg-background p-5 text-left shadow-xs transition hover:border-teal-500/40 hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Approval Rate</span>
                       <TrendingUp className="h-5 w-5 text-teal-500" />
                     </div>
                     <p className="mt-2 text-3xl font-bold">{metrics.passRate}%</p>
                     <p className="mt-1 text-xs text-muted-foreground">Scans with Granted outcome</p>
-                  </div>
+                  </button>
                 </div>
 
                 <div className="grid gap-6 md:grid-cols-[1fr_360px]">
@@ -572,6 +1087,168 @@ export default function MuseumDashboardPage() {
                       </Link>
                     </div>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'bookings' && (
+              <motion.div
+                key="bookings"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-xl border bg-background p-5 shadow-xs"
+              >
+                <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Museum Bookings</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {currentMuseum ? `${currentMuseum.name} bookings only` : shouldRestrictToCurrentMuseum ? 'Link this account to a Firestore museum to show bookings' : 'All museum bookings'}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    {scopedBookings.length} booking{scopedBookings.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground font-medium">
+                        <th className="pb-3 pr-3">Booking</th>
+                        <th className="pb-3 pr-3">Visitor</th>
+                        <th className="pb-3 pr-3">Museum</th>
+                        <th className="pb-3 pr-3">Visit</th>
+                        <th className="pb-3 pr-3">Tickets</th>
+                        <th className="pb-3 pr-3">Amount</th>
+                        <th className="pb-3 pr-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={7} className="py-16 text-center text-muted-foreground">
+                            <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-500" />
+                          </td>
+                        </tr>
+                      ) : filteredBookings.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-16 text-center text-muted-foreground">
+                            No bookings found for this museum.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredBookings.map((booking) => (
+                          <tr key={booking._id} className="border-b last:border-0 hover:bg-muted/10">
+                            <td className="py-3.5 pr-3">
+                              <div className="font-semibold text-foreground">{booking.bookingId}</div>
+                              <div className="text-xs text-muted-foreground">{formatDate(booking.createdAt)}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <div className="font-medium">{booking.name || '-'}</div>
+                              <div className="text-xs text-muted-foreground">{booking.email || '-'}</div>
+                              <div className="text-xs text-muted-foreground">{booking.phone || '-'}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <div className="font-medium">{booking.museumName || currentMuseum?.name || '-'}</div>
+                              <div className="text-xs text-muted-foreground">{booking.museumLocation || currentMuseum?.location || '-'}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <div>{formatDate(booking.visitDate)}</div>
+                              <div className="text-xs text-muted-foreground">{booking.timeSlot}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <div className="font-medium">{booking.numberOfTickets}</div>
+                              <div className="max-w-[220px] text-xs text-muted-foreground">{formatVisitorBreakdown(booking)}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <div className="font-semibold">{formatCurrency(booking.totalAmount)}</div>
+                              <div className="text-xs text-muted-foreground">{booking.paymentStatus}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                booking.status === 'confirmed'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-300'
+                                  : booking.status === 'cancelled'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-300'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
+                              }`}>
+                                {booking.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'visitors' && (
+              <motion.div
+                key="visitors"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-xl border bg-background p-5 shadow-xs"
+              >
+                <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Museum Visitors</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Unique visitors calculated from this museum's bookings.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-700 dark:text-blue-300">
+                    {visitorStats.length} visitor{visitorStats.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground font-medium">
+                        <th className="pb-3 pr-3">Visitor</th>
+                        <th className="pb-3 pr-3">Phone</th>
+                        <th className="pb-3 pr-3">Bookings</th>
+                        <th className="pb-3 pr-3">Tickets</th>
+                        <th className="pb-3 pr-3">Spent</th>
+                        <th className="pb-3 pr-3">Last Visit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={6} className="py-16 text-center text-muted-foreground">
+                            <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-500" />
+                          </td>
+                        </tr>
+                      ) : filteredVisitors.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-16 text-center text-muted-foreground">
+                            No visitors found for this museum.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredVisitors.map((visitor) => (
+                          <tr key={visitor.email} className="border-b last:border-0 hover:bg-muted/10">
+                            <td className="py-3.5 pr-3">
+                              <div className="font-semibold text-foreground">{visitor.name}</div>
+                              <div className="text-xs text-muted-foreground">{visitor.email}</div>
+                            </td>
+                            <td className="py-3.5 pr-3 text-muted-foreground">{visitor.phone}</td>
+                            <td className="py-3.5 pr-3 font-medium">{visitor.totalBookings}</td>
+                            <td className="py-3.5 pr-3 font-medium">{visitor.totalTickets}</td>
+                            <td className="py-3.5 pr-3 font-semibold">{formatCurrency(visitor.totalSpent)}</td>
+                            <td className="py-3.5 pr-3 text-muted-foreground">{formatDate(visitor.lastVisit)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </motion.div>
             )}

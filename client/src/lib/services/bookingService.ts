@@ -59,7 +59,7 @@ export function calculateBookingTotal(
   if (input.visitorCombo && Object.keys(input.visitorCombo).length > 0) {
     let totalAmount = 0;
     for (const [vType, count] of Object.entries(input.visitorCombo)) {
-      let price = TICKET_PRICES[vType as VisitorType] || 200;
+      let price: number = TICKET_PRICES[vType as VisitorType] || 200;
       if (customPrices && typeof customPrices[vType] === 'number') {
         price = customPrices[vType];
       } else if (input.pricePerTicket && input.pricePerTicket > 0) {
@@ -75,7 +75,7 @@ export function calculateBookingTotal(
     }
     const nonZeroTypes = Object.entries(input.visitorCombo).filter(([_, count]) => count > 0);
     const representativeType = nonZeroTypes.length > 0 ? nonZeroTypes[0][0] : 'Adult';
-    let pricePerTicket = TICKET_PRICES[representativeType as VisitorType] || 200;
+    let pricePerTicket: number = TICKET_PRICES[representativeType as VisitorType] || 200;
     if (customPrices && typeof customPrices[representativeType] === 'number') {
       pricePerTicket = customPrices[representativeType];
     } else if (input.pricePerTicket && input.pricePerTicket > 0) {
@@ -335,6 +335,86 @@ export async function getBookingsForUser(userId: string) {
     success: true,
     count: list.length,
     bookings: list
+  };
+}
+
+function toTicketScanAction(message: string, outcome: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes('exit')) return 'exit';
+  if (outcome === 'granted') return 'entry';
+  return 'denied';
+}
+
+function isTicketExpired(visitDate: string) {
+  const todayInKolkata = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
+  const todayStr = todayInKolkata.toISOString().split('T')[0];
+  return Boolean(visitDate) && visitDate < todayStr;
+}
+
+export async function getTicketHistoryForUser(input: { userId: string; email?: string | null }) {
+  const database = getFirebaseRealtimeDatabase();
+  const normalizedEmail = String(input.email || '').trim().toLowerCase();
+  const bookingsById = new Map<string, ReturnType<typeof toBookingResponse>>();
+
+  if (input.userId) {
+    const userSnapshot = await database.ref(`bookingsByUser/${input.userId}`).once('value');
+    userSnapshot.forEach((child) => {
+      const booking = toBookingResponse(child.key || '', child.val());
+      bookingsById.set(booking.bookingId, booking);
+    });
+  }
+
+  if (normalizedEmail) {
+    const allSnapshot = await database.ref('bookings').once('value');
+    allSnapshot.forEach((child) => {
+      const val = child.val();
+      if (String(val?.email || '').trim().toLowerCase() === normalizedEmail) {
+        const booking = toBookingResponse(child.key || '', val);
+        bookingsById.set(booking.bookingId, booking);
+      }
+    });
+  }
+
+  const scanLogsByTicket = new Map<string, any[]>();
+  const scanSnapshot = await database.ref('scan_logs').once('value');
+  scanSnapshot.forEach((child) => {
+    const val = child.val();
+    const ticketId = String(val?.ticketId || '').trim();
+    if (!ticketId) return;
+
+    const logs = scanLogsByTicket.get(ticketId) || [];
+    logs.push({
+      id: child.key || '',
+      ticketId,
+      deviceId: String(val?.deviceId || ''),
+      deviceName: String(val?.deviceName || ''),
+      scannedAt: toDateString(val?.scannedAt),
+      outcome: String(val?.outcome || 'denied'),
+      message: String(val?.message || '')
+    });
+    scanLogsByTicket.set(ticketId, logs);
+  });
+
+  const tickets = Array.from(bookingsById.values()).map((booking) => {
+    const scanLogs = (scanLogsByTicket.get(booking.bookingId) || [])
+      .sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
+    const latestScan = scanLogs[0] || null;
+
+    return {
+      ...booking,
+      expired: isTicketExpired(booking.visitDate),
+      gateAction: latestScan ? toTicketScanAction(latestScan.message, latestScan.outcome) : 'not_scanned',
+      latestScan,
+      scanLogs
+    };
+  });
+
+  tickets.sort((a, b) => new Date(b.visitDate || b.createdAt).getTime() - new Date(a.visitDate || a.createdAt).getTime());
+
+  return {
+    success: true,
+    count: tickets.length,
+    tickets
   };
 }
 

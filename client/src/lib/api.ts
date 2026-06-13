@@ -67,6 +67,23 @@ export type BookingResponse = {
   createdAt: string;
 };
 
+export type TicketScanLog = {
+  id: string;
+  ticketId: string;
+  deviceId: string;
+  deviceName: string;
+  scannedAt: string;
+  outcome: 'granted' | 'denied';
+  message: string;
+};
+
+export type TicketHistoryItem = BookingResponse & {
+  expired: boolean;
+  gateAction: 'entry' | 'exit' | 'denied' | 'not_scanned';
+  latestScan: TicketScanLog | null;
+  scanLogs: TicketScanLog[];
+};
+
 export type RazorpayOrderResponse = {
   success: boolean;
   demoMode?: boolean;
@@ -82,9 +99,10 @@ export type RazorpayOrderResponse = {
   currency: string;
 };
 
-export async function createRazorpayOrder(payload: CreateBookingInput) {
+export async function createRazorpayOrder(payload: CreateBookingInput, authToken?: string) {
   return apiFetch<RazorpayOrderResponse>(`${API_BASE_URL}/payments/razorpay/order`, {
     method: 'POST',
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
     body: JSON.stringify(payload)
   });
 }
@@ -95,11 +113,12 @@ export async function verifyRazorpayPayment(payload: {
   razorpayPaymentId: string;
   razorpaySignature: string;
   demoMode?: boolean;
-}) {
+}, authToken?: string) {
   return apiFetch<{ success: boolean; message: string; booking: BookingResponse }>(
     `${API_BASE_URL}/payments/razorpay/verify`,
     {
       method: 'POST',
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
       body: JSON.stringify(payload)
     }
   );
@@ -118,6 +137,18 @@ export async function createBooking(payload: CreateBookingInput) {
 export async function getBookingByBookingId(bookingId: string) {
   return apiFetch<{ success: boolean; booking: BookingResponse }>(
     `${API_BASE_URL}/bookings/by-booking-id/${encodeURIComponent(bookingId)}`
+  );
+}
+
+export async function getMyTicketHistory(authToken: string, email?: string) {
+  const query = email ? `?email=${encodeURIComponent(email)}` : '';
+  return apiFetch<{ success: boolean; count: number; tickets: TicketHistoryItem[] }>(
+    `${API_BASE_URL}/bookings/user/my-bookings${query}`,
+    {
+      headers: {
+        Authorization: `Bearer ${authToken}`
+      }
+    }
   );
 }
 

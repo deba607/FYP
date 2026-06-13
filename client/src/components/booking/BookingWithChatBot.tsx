@@ -2,8 +2,12 @@
 
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users } from 'lucide-react';
-import { createBooking, resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
+import { onAuthStateChanged } from 'firebase/auth';
+import { resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment, getMyTicketHistory } from '../../lib/api';
+import type { TicketHistoryItem } from '../../lib/api';
+import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
@@ -17,6 +21,9 @@ type ChatMessage = {
   bookMuseumName?: string;
   showDatePicker?: boolean;
   showVisitorPicker?: boolean;
+  qrDataUrl?: string;
+  qrBookingId?: string;
+  ticketCards?: TicketCard[];
 };
 
 type MuseumOption = {
@@ -43,6 +50,10 @@ type BookingData = {
   museumCategory?: string;
   museumId?: string;
   pricePerTicket?: number;
+};
+
+type TicketCard = TicketHistoryItem & {
+  qrDataUrl: string;
 };
 
 const CHAT_SESSION_KEY = 'bharat_museum_chat_session_id';
@@ -442,7 +453,7 @@ function InlineDatePicker({ onSelectDate, disabled }: { onSelectDate: (date: str
             let bg = 'transparent';
             let color = cell.isCurrentMonth ? '#e0e0e0' : '#555566';
             let fontWeight = '400';
-            let border = 'none';
+            const border = 'none';
 
             if (cellSelected) {
               bg = '#1565c0';
@@ -788,6 +799,55 @@ function loadRazorpayScript() {
   });
 }
 
+function getStoredUserEmail() {
+  if (typeof window === 'undefined') return '';
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_USER_KEY);
+    if (!raw) return '';
+
+    const parsed = JSON.parse(raw) as { email?: string };
+    return parsed?.email?.trim() || '';
+  } catch {
+    return '';
+  }
+}
+
+async function makeTicketQr(bookingId: string) {
+  return QRCode.toDataURL(bookingId, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 220,
+    color: {
+      dark: '#111827',
+      light: '#ffffff'
+    }
+  });
+}
+
+async function getCurrentIdToken() {
+  return getFirebaseClientAuth().currentUser?.getIdToken().catch(() => undefined);
+}
+
+function formatTicketDate(value?: string) {
+  if (!value) return '-';
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function gateActionLabel(action: TicketHistoryItem['gateAction']) {
+  if (action === 'entry') return 'Entry granted';
+  if (action === 'exit') return 'Exit recorded';
+  if (action === 'denied') return 'Scan denied';
+  return 'Not scanned yet';
+}
+
 export default function BookingWithChatBot() {
   const { language } = useLanguage();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -799,6 +859,8 @@ export default function BookingWithChatBot() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -826,9 +888,40 @@ export default function BookingWithChatBot() {
   }, [bookingData]);
 
   useEffect(() => {
-    const generated = encodeRtdbKey(makeSessionId());
-    window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
-    setSessionId(generated);
+    if (canConfirm && chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [canConfirm]);
+
+  useEffect(() => {
+    const auth = getFirebaseClientAuth();
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      let hasStoredUser = false;
+      try {
+        hasStoredUser = Boolean(window.localStorage.getItem(AUTH_USER_KEY));
+      } catch {
+        hasStoredUser = false;
+      }
+
+      const loggedIn = Boolean(firebaseUser || hasStoredUser);
+      setIsLoggedIn(loggedIn);
+      setAuthChecked(true);
+
+      if (!loggedIn) {
+        setSessionId('');
+        return;
+      }
+
+      const stableSessionId = getStableSessionIdFromLogin();
+      const generated = stableSessionId || encodeRtdbKey(makeSessionId());
+      window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
+      setSessionId(generated);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Initialize welcome message when session is ready.
@@ -843,6 +936,32 @@ export default function BookingWithChatBot() {
       }
     ]);
   }, [language, sessionId]);
+
+  if (!authChecked) {
+    return (
+      <div className="mx-auto flex min-h-[320px] w-full max-w-4xl items-center justify-center rounded-lg border bg-background p-6">
+        <div className="text-sm text-muted-foreground">Checking login status...</div>
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <div className="mx-auto w-full max-w-2xl rounded-lg border bg-background p-6 text-center shadow-sm">
+        <MessageCircle className="mx-auto mb-3 h-8 w-8 text-primary" />
+        <h3 className="text-lg font-semibold">Login required</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Please login first to use the chatbot and book museum tickets.
+        </p>
+        <a
+          href="/login?redirect=/booking/chat"
+          className="mt-5 inline-flex rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Go to Login
+        </a>
+      </div>
+    );
+  }
 
   const sendMessage = async (displayText: string, apiText = displayText) => {
     if (!displayText.trim() || !sessionId) return;
@@ -1007,6 +1126,60 @@ export default function BookingWithChatBot() {
     ]);
   };
 
+  const showMyTickets = async () => {
+    if (sending || confirming) return;
+
+    setSending(true);
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: 'user',
+        text: 'My Tickets',
+        timestamp: new Date().toLocaleTimeString()
+      }
+    ]);
+
+    try {
+      const token = await getCurrentIdToken();
+      const email = getStoredUserEmail() || getFirebaseClientAuth().currentUser?.email || '';
+
+      if (!token) {
+        throw new Error('Please login again to view your tickets.');
+      }
+
+      const result = await getMyTicketHistory(token, email);
+      const ticketCards = await Promise.all(
+        result.tickets.map(async (ticket) => ({
+          ...ticket,
+          qrDataUrl: await makeTicketQr(ticket.bookingId)
+        }))
+      );
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: 'bot',
+          text: ticketCards.length
+            ? `You have ${ticketCards.length} ticket${ticketCards.length === 1 ? '' : 's'}.`
+            : 'No tickets found for your logged-in account.',
+          timestamp: new Date().toLocaleTimeString(),
+          ticketCards
+        }
+      ]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: 'bot',
+          text: (error as Error).message || 'Unable to load your tickets right now.',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
   const confirmBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1050,7 +1223,52 @@ export default function BookingWithChatBot() {
         totalPrice: totalAmount
       };
 
-      const orderResponse = await createRazorpayOrder(bookingPayload);
+      const authToken = await getCurrentIdToken();
+      const orderResponse = await createRazorpayOrder(bookingPayload, authToken);
+      const handleVerifiedBooking = async (verified: { booking: { bookingId: string } }) => {
+        const qrDataUrl = await makeTicketQr(verified.booking.bookingId);
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            text: translate(language, 'chat.bookingConfirmed', {
+              bookingId: verified.booking.bookingId,
+              email: email.trim()
+            }),
+            timestamp: new Date().toLocaleTimeString(),
+            qrDataUrl,
+            qrBookingId: verified.booking.bookingId
+          }
+        ]);
+
+        try {
+          const mod = await import('canvas-confetti');
+          const confetti = (mod && (mod.default || mod)) as any;
+          confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+        } catch {
+          // ignore if confetti isn't available
+        }
+
+        setBookingData((prev) => ({ ...prev, ready_to_confirm: false }));
+        setName('');
+        setEmail('');
+        setPhone('');
+      };
+
+      if (orderResponse.demoMode) {
+        const verified = await verifyRazorpayPayment({
+          booking: bookingPayload,
+          razorpayOrderId: orderResponse.order.id,
+          razorpayPaymentId: `pay_demo_${Date.now()}`,
+          razorpaySignature: 'demo_signature',
+          demoMode: true
+        }, authToken);
+
+        await handleVerifiedBooking(verified);
+        setConfirming(false);
+        return;
+      }
 
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
@@ -1101,32 +1319,9 @@ export default function BookingWithChatBot() {
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature
-            });
+            }, authToken);
 
-            setMessages((prev) => [
-              ...prev,
-              {
-                from: 'bot',
-                text: translate(language, 'chat.bookingConfirmed', {
-                  bookingId: verified.booking.bookingId,
-                  email: email.trim()
-                }),
-                timestamp: new Date().toLocaleTimeString()
-              }
-            ]);
-
-            try {
-              const mod = await import('canvas-confetti');
-              const confetti = (mod && (mod.default || mod)) as any;
-              confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-            } catch {
-              // ignore if confetti isn't available
-            }
-
-            setBookingData((prev) => ({ ...prev, ready_to_confirm: false }));
-            setName('');
-            setEmail('');
-            setPhone('');
+            await handleVerifiedBooking(verified);
           } catch (paymentError) {
             setMessages((prev) => [
               ...prev,
@@ -1164,7 +1359,16 @@ export default function BookingWithChatBot() {
           <h4 className="text-lg font-medium">{translate(language, 'chat.title')}</h4>
           <button
             type="button"
-            className="ml-auto rounded border px-2 py-1 text-xs"
+            className="ml-auto inline-flex items-center gap-1 rounded border px-2 py-1 text-xs"
+            onClick={showMyTickets}
+            disabled={sending || confirming}
+          >
+            <Ticket className="h-3 w-3" />
+            My Tickets
+          </button>
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs"
             onClick={reset}
             disabled={sending || confirming}
           >
@@ -1181,6 +1385,67 @@ export default function BookingWithChatBot() {
               <div className={`inline-block whitespace-pre-line rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
                 {m.text}
               </div>
+              {m.qrDataUrl && m.qrBookingId && (
+                <div className="mt-2 inline-block rounded-lg border bg-white p-4 text-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={m.qrDataUrl}
+                    alt={`QR code for booking ${m.qrBookingId}`}
+                    className="mx-auto h-40 w-40"
+                  />
+                  <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
+                </div>
+              )}
+              {m.ticketCards && m.ticketCards.length > 0 && (
+                <div className="mt-2 grid gap-3">
+                  {m.ticketCards.map((ticket) => (
+                    <div key={ticket.bookingId} className="rounded-lg border bg-background p-3 text-left text-foreground shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono text-sm font-semibold">{ticket.bookingId}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {ticket.museumName || 'Museum'}{ticket.museumLocation ? `, ${ticket.museumLocation}` : ''}
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${ticket.expired ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          {ticket.expired ? 'Expired' : 'Active'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 sm:grid-cols-[150px_1fr]">
+                        <div className="rounded-md border bg-white p-2 text-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={ticket.qrDataUrl}
+                            alt={`QR code for booking ${ticket.bookingId}`}
+                            className="mx-auto h-32 w-32"
+                          />
+                          <div className="mt-1 text-[11px] font-medium text-slate-700">Gate QR</div>
+                        </div>
+                        <div className="space-y-1 text-xs">
+                          <div><span className="text-muted-foreground">Date:</span> {formatTicketDate(ticket.visitDate)}</div>
+                          <div><span className="text-muted-foreground">Time:</span> {ticket.timeSlot}</div>
+                          <div><span className="text-muted-foreground">Tickets:</span> {ticket.numberOfTickets} x {ticket.visitorType}</div>
+                          <div><span className="text-muted-foreground">Amount:</span> ₹{ticket.totalAmount}</div>
+                          <div><span className="text-muted-foreground">Gate action:</span> {gateActionLabel(ticket.gateAction)}</div>
+                          {ticket.latestScan ? (
+                            <div className="rounded bg-muted p-2 text-[11px]">
+                              <div>{ticket.latestScan.message}</div>
+                              <div className="mt-1 text-muted-foreground">
+                                {formatDateTime(ticket.latestScan.scannedAt)} · {ticket.latestScan.deviceName || 'Unknown device'}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded bg-muted p-2 text-[11px] text-muted-foreground">
+                              No entry or exit scan has been recorded for this ticket.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {m.museumOptions && (
                 <div className="mt-2 w-full max-w-xs">
                   <select
@@ -1256,6 +1521,63 @@ export default function BookingWithChatBot() {
             </div>
           ))}
           {sending && <div className="text-xs text-muted-foreground">{translate(language, 'chat.typing')}</div>}
+          {canConfirm && (
+            <div className="mb-2 max-w-[85%] text-sm text-muted-foreground">
+              <form onSubmit={confirmBooking} className="inline-block w-full rounded border bg-muted px-3 py-3 text-foreground">
+                <h5 className="mb-3 text-sm font-semibold">{translate(language, 'chat.confirmDetails')}</h5>
+                <div className="mb-2 grid gap-2 md:grid-cols-2">
+                  <input
+                    className="rounded border bg-background px-3 py-2 text-sm"
+                    placeholder={translate(language, 'booking.fullName')}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={confirming}
+                  />
+                  <input
+                    className="rounded border bg-background px-3 py-2 text-sm"
+                    placeholder={translate(language, 'booking.email')}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={confirming}
+                  />
+                </div>
+                <input
+                  className="mb-3 w-full rounded border bg-background px-3 py-2 text-sm"
+                  placeholder={translate(language, 'booking.phone')}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  disabled={confirming}
+                />
+
+                <div className="mb-3 rounded bg-background p-2 text-xs" data-bmt-no-translate>
+                  <div>{translate(language, 'booking.date')}: {bookingData.date}</div>
+                  <div>{translate(language, 'booking.time')}: {bookingData.time_slot}</div>
+                  <div>{translate(language, 'booking.ticketCount')}: {bookingData.tickets}</div>
+                  {bookingData.visitor_combo && Object.keys(bookingData.visitor_combo).length > 0 ? (
+                    <div>
+                      <div className="mt-1 font-semibold">{translate(language, 'booking.visitorCategory')}:</div>
+                      {Object.entries(bookingData.visitor_combo).map(([vtype, count]) => (
+                        count > 0 ? (
+                          <div key={vtype} className="ml-2">{count} x {vtype}</div>
+                        ) : null
+                      ))}
+                    </div>
+                  ) : (
+                    <div>{translate(language, 'booking.visitorCategory')}: {bookingData.visitor_type}</div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground"
+                  disabled={confirming}
+                >
+                  {confirming ? translate(language, 'chat.confirming') : translate(language, 'chat.confirm')}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -1272,61 +1594,6 @@ export default function BookingWithChatBot() {
           </button>
         </div>
 
-        {canConfirm && (
-          <form onSubmit={confirmBooking} className="mt-4 rounded border p-3">
-            <h5 className="mb-3 text-sm font-semibold">{translate(language, 'chat.confirmDetails')}</h5>
-            <div className="mb-2 grid gap-2 md:grid-cols-2">
-              <input
-                className="rounded border px-3 py-2 text-sm"
-                placeholder={translate(language, 'booking.fullName')}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={confirming}
-              />
-              <input
-                className="rounded border px-3 py-2 text-sm"
-                placeholder={translate(language, 'booking.email')}
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={confirming}
-              />
-            </div>
-            <input
-              className="mb-3 w-full rounded border px-3 py-2 text-sm"
-              placeholder={translate(language, 'booking.phone')}
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              disabled={confirming}
-            />
-
-            <div className="mb-3 rounded bg-muted p-2 text-xs" data-bmt-no-translate>
-              <div>{translate(language, 'booking.date')}: {bookingData.date}</div>
-              <div>{translate(language, 'booking.time')}: {bookingData.time_slot}</div>
-              <div>{translate(language, 'booking.ticketCount')}: {bookingData.tickets}</div>
-              {bookingData.visitor_combo && Object.keys(bookingData.visitor_combo).length > 0 ? (
-                <div>
-                  <div className="mt-1 font-semibold">{translate(language, 'booking.visitorCategory')}:</div>
-                  {Object.entries(bookingData.visitor_combo).map(([vtype, count]) => (
-                    count > 0 ? (
-                      <div key={vtype} className="ml-2">{count}× {vtype}</div>
-                    ) : null
-                  ))}
-                </div>
-              ) : (
-                <div>{translate(language, 'booking.visitorCategory')}: {bookingData.visitor_type}</div>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground"
-              disabled={confirming}
-            >
-              {confirming ? translate(language, 'chat.confirming') : translate(language, 'chat.confirm')}
-            </button>
-          </form>
-        )}
       </aside>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { buttonVariants } from '../ui/button';
@@ -89,6 +90,22 @@ function loadRazorpayScript() {
   });
 }
 
+async function makeTicketQr(bookingId: string) {
+  return QRCode.toDataURL(bookingId, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 220,
+    color: {
+      dark: '#111827',
+      light: '#ffffff'
+    }
+  });
+}
+
+async function getCurrentIdToken() {
+  return getFirebaseClientAuth().currentUser?.getIdToken().catch(() => undefined);
+}
+
 
 function BookTicket() {
   const { language } = useLanguage();
@@ -109,7 +126,7 @@ function BookTicket() {
   const [time, setTime] = useState(TIME_SLOTS[0]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [success, setSuccess] = useState<null | { id: string; summary: string }>(null);
+  const [success, setSuccess] = useState<null | { id: string; summary: string; qrDataUrl: string }>(null);
 
   const uniqueMuseums = useMemo(() => {
     const seen = new Set<string>();
@@ -191,9 +208,10 @@ function BookTicket() {
 
     // Check if the museum has custom prices object
     if (selectedMuseum.prices && typeof selectedMuseum.prices === 'object') {
+      const prices = selectedMuseum.prices;
       return defaultCategories.map(cat => ({
         ...cat,
-        price: Number(selectedMuseum.prices[cat.name] ?? selectedMuseum.prices[cat.name.toLowerCase()] ?? cat.price)
+        price: Number(prices[cat.name] ?? prices[cat.name.toLowerCase()] ?? cat.price)
       }));
     }
 
@@ -274,7 +292,8 @@ function BookTicket() {
         totalPrice: total
       };
 
-      const orderResponse = await createRazorpayOrder(bookingPayload);
+      const authToken = await getCurrentIdToken();
+      const orderResponse = await createRazorpayOrder(bookingPayload, authToken);
       if (orderResponse.demoMode) {
         const demoPaymentId = `pay_demo_${Date.now()}`;
         const verified = await verifyRazorpayPayment({
@@ -283,11 +302,12 @@ function BookTicket() {
           razorpayPaymentId: demoPaymentId,
           razorpaySignature: 'demo_signature',
           demoMode: true
-        });
+        }, authToken);
 
         setSuccess({
           id: verified.booking.bookingId,
-          summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} â€” â‚¹${verified.booking.totalAmount} (demo payment)`
+          summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} â€” â‚¹${verified.booking.totalAmount} (demo payment)`,
+          qrDataUrl: await makeTicketQr(verified.booking.bookingId)
         });
 
         try {
@@ -358,11 +378,12 @@ function BookTicket() {
               razorpayOrderId: response.razorpay_order_id,
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature
-            });
+            }, authToken);
 
             setSuccess({
               id: verified.booking.bookingId,
-              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`
+              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`,
+              qrDataUrl: await makeTicketQr(verified.booking.bookingId)
             });
 
             try {
@@ -445,6 +466,15 @@ function BookTicket() {
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           <div className="font-medium">{translate(language, 'booking.confirmed')} — {success.id}</div>
           <div className="mt-1 text-sm text-muted-foreground">{success.summary}</div>
+          <div className="mt-4 rounded-lg border border-green-200 bg-white p-4 text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={success.qrDataUrl}
+              alt={`QR code for booking ${success.id}`}
+              className="mx-auto h-44 w-44"
+            />
+            <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
+          </div>
         </div>
       ) : null}
 
