@@ -5,7 +5,33 @@ import { encodeRtdbKey } from '../utils/firebaseKey';
 
 const CHATBOT_ENGINE_URL = process.env.CHATBOT_ENGINE_URL || 'http://localhost:5001';
 
-export async function sendMessageToChatbot(input: { message: string; session_id?: string; language?: string }) {
+function redactSensitiveChatMessage(message: string, intent?: string) {
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+
+  if (
+    (intent === 'signup' || intent === 'signin') &&
+    text &&
+    !text.includes('@') &&
+    !['sign up', 'signup', 'register', 'create account', 'sign in', 'signin', 'login', 'log in'].some((keyword) => lower.includes(keyword))
+  ) {
+    return '[redacted auth message]';
+  }
+
+  return message;
+}
+
+export async function sendMessageToChatbot(input: {
+  message: string;
+  session_id?: string;
+  language?: string;
+  auth?: {
+    token?: string;
+    email?: string;
+    userId?: string;
+    isLoggedIn?: boolean;
+  };
+}) {
   if (!input.message?.trim()) {
     throw new ApiError('Message is required', 400);
   }
@@ -14,7 +40,8 @@ export async function sendMessageToChatbot(input: { message: string; session_id?
     const response = await axios.post(`${CHATBOT_ENGINE_URL}/chat`, {
       message: input.message,
       session_id: input.session_id || 'default',
-      language: input.language || 'en'
+      language: input.language || 'en',
+      auth: input.auth || {}
     });
 
     // Store messages in Firebase Realtime Database (server-side)
@@ -26,7 +53,7 @@ export async function sendMessageToChatbot(input: { message: string; session_id?
       // push user message
       await sessionRef.push({
         sender: 'user',
-        message: input.message,
+        message: redactSensitiveChatMessage(input.message, response.data.intent),
         timestamp: Date.now()
       });
 
@@ -36,11 +63,11 @@ export async function sendMessageToChatbot(input: { message: string; session_id?
         message: response.data.response,
         intent: response.data.intent || null,
         booking_data: response.data.booking_data || {},
+        action: response.data.action || null,
         timestamp: Date.now()
       });
     } catch (err) {
       // don't block the chat flow if DB logging fails
-      // eslint-disable-next-line no-console
       console.warn('Failed to write chat message to Firebase RTDB:', (err as Error).message);
     }
 
@@ -48,7 +75,9 @@ export async function sendMessageToChatbot(input: { message: string; session_id?
       success: true,
       response: response.data.response,
       intent: response.data.intent,
-      booking_data: response.data.booking_data
+      booking_data: response.data.booking_data,
+      action: response.data.action || null,
+      auth_result: response.data.auth_result || null
     };
   } catch (error) {
     throw new ApiError((error as Error).message || 'Failed to process message', 500);

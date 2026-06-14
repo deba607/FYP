@@ -719,6 +719,7 @@ export default function AdminDashboardPage() {
   const [userActivityLoading, setUserActivityLoading] = useState(false);
   const [activityQuery, setActivityQuery] = useState('');
   const [selectedActivityCategory, setSelectedActivityCategory] = useState('All Categories');
+  const [selectedActivityEmail, setSelectedActivityEmail] = useState('All Users');
 
   const loadUserActivity = useCallback(async () => {
     // Real-time sync is active, no manual fetching required
@@ -737,6 +738,11 @@ export default function AdminDashboardPage() {
       list = list.filter((a) => a.category === selectedActivityCategory);
     }
 
+    if (selectedActivityEmail !== 'All Users') {
+      const selectedEmail = selectedActivityEmail.trim().toLowerCase();
+      list = list.filter((a) => String(a.email || '').trim().toLowerCase() === selectedEmail);
+    }
+
     const needle = activityQuery.trim().toLowerCase();
     if (!needle) return list;
 
@@ -750,7 +756,19 @@ export default function AdminDashboardPage() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
-  }, [userActivity, activityQuery, selectedActivityCategory]);
+  }, [userActivity, activityQuery, selectedActivityCategory, selectedActivityEmail]);
+
+  const activityEmailOptions = useMemo(() => {
+    const emails = new Set<string>();
+    userActivity.forEach((activity) => {
+      const email = String(activity.email || '').trim();
+      if (email && email.toLowerCase() !== 'guest') {
+        emails.add(email.toLowerCase());
+      }
+    });
+
+    return Array.from(emails).sort((a, b) => a.localeCompare(b));
+  }, [userActivity]);
 
   const loadBookings = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     setRefreshing(true);
@@ -2072,6 +2090,19 @@ export default function AdminDashboardPage() {
                     <option value="Navigation">Navigation</option>
                     <option value="Interaction">Interaction</option>
                   </select>
+                  <select
+                    value={selectedActivityEmail}
+                    onChange={(e) => setSelectedActivityEmail(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring cursor-pointer sm:w-64"
+                    aria-label="Filter activities by user email"
+                  >
+                    <option value="All Users">All Users</option>
+                    {activityEmailOptions.map((email) => (
+                      <option key={email} value={email}>
+                        {email}
+                      </option>
+                    ))}
+                  </select>
                   <div className="relative w-full md:w-60">
                     <Search className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
                     <input
@@ -2114,7 +2145,7 @@ export default function AdminDashboardPage() {
                     ) : filteredUserActivity.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-10 text-center text-muted-foreground">
-                          No activities logged yet.
+                          No matching activities found.
                         </td>
                       </tr>
                     ) : (

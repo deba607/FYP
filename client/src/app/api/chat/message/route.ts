@@ -6,12 +6,29 @@ import { logUserActivity } from '../../../../lib/services/activityService';
 
 export const runtime = 'nodejs';
 
+function redactChatActivitySnippet(message: string, intent?: string | null) {
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+  const authStarters = ['sign up', 'signup', 'register', 'create account', 'sign in', 'signin', 'login', 'log in'];
+
+  if (
+    (intent === 'signup' || intent === 'signin') &&
+    text &&
+    !text.includes('@') &&
+    !authStarters.some((keyword) => lower.includes(keyword))
+  ) {
+    return '[redacted auth message]';
+  }
+
+  return text;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const result = await sendMessageToChatbot(body);
     
-    const snippet = String(body.message || '').substring(0, 60);
+    const snippet = redactChatActivitySnippet(body.message || '', result.intent).substring(0, 60);
     void logUserActivity(
       null,
       'chatbot-visitor',

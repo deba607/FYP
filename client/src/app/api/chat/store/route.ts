@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
         message: body.bot_message,
         intent: body?.intent || null,
         booking_data: body?.booking_data || {},
+        action: body?.action || null,
         timestamp: Date.now()
       });
     }

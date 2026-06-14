@@ -74,6 +74,7 @@ export type TicketScanLog = {
   deviceName: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
+  gateAction?: 'entry' | 'exit';
   message: string;
 };
 
@@ -152,18 +153,45 @@ export async function getMyTicketHistory(authToken: string, email?: string) {
   );
 }
 
-export async function sendChatMessage(message: string, sessionId?: string, language?: string) {
+export type ChatAuthResult = {
+  token?: string;
+  firebaseCustomToken?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    role: string;
+    profileCompleted: boolean;
+  };
+};
+
+export type ChatAction =
+  | { type: 'show_my_tickets' }
+  | { type: 'show_ticket_by_id'; bookingId: string }
+  | { type: 'auth_success' }
+  | { type: 'auth_required' };
+
+export async function sendChatMessage(
+  message: string,
+  sessionId?: string,
+  language?: string,
+  authContext?: { token?: string; email?: string; userId?: string; isLoggedIn?: boolean }
+) {
   return apiFetch<{
     success: boolean;
     response: string;
     intent?: string;
     booking_data?: Record<string, unknown>;
+    action?: ChatAction;
+    auth_result?: ChatAuthResult;
   }>(`${API_BASE_URL}/chat/message`, {
     method: 'POST',
     body: JSON.stringify({
       message,
       session_id: sessionId,
-      language
+      language,
+      auth: authContext
     })
   });
 }

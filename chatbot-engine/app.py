@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from chatbot.museum_assistant import MuseumAssistant
+from chatbot.firestore_chat_service import FirestoreFirstChatbotService
+from chatbot.production_services import BookingService, MuseumService, ServiceError
 from dotenv import load_dotenv
 import os
 import logging
@@ -120,6 +122,25 @@ def extract_booking_id(message: str) -> str:
     return match.group(0) if match else "N/A"
 
 
+def redact_sensitive_chat_message(message: str, intent: str = "") -> str:
+    text = str(message or "").strip()
+    lower = text.lower()
+    auth_starters = {
+        "sign up", "signup", "register", "create account",
+        "sign in", "signin", "login", "log in"
+    }
+
+    if (
+        intent in {"signup", "signin"} and
+        text and
+        "@" not in text and
+        not any(keyword in lower for keyword in auth_starters)
+    ):
+        return "[redacted auth message]"
+
+    return message
+
+
 def localize_bot_message(message: str, language: str, intent: str = "") -> str:
     if language == "en" or not message:
         return message
@@ -166,6 +187,37 @@ except Exception as err:
     logger.error("Failed to initialize museum assistant: %s", err)
     assistant = None
 
+try:
+    production_chatbot = FirestoreFirstChatbotService()
+    production_booking_service = BookingService()
+    production_museum_service = MuseumService()
+except Exception as err:
+    logger.warning("Production Firestore services unavailable: %s", err)
+    production_chatbot = None
+    production_booking_service = None
+    production_museum_service = None
+
+
+def request_user_context() -> dict:
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "", 1).strip() if auth_header.startswith("Bearer ") else ""
+    data = request.get_json(silent=True) if request.is_json else {}
+    auth = data.get("auth") if isinstance(data, dict) and isinstance(data.get("auth"), dict) else {}
+    return {
+        "id": auth.get("userId") or auth.get("id") or request.headers.get("X-User-Id", ""),
+        "userId": auth.get("userId") or auth.get("id") or request.headers.get("X-User-Id", ""),
+        "email": auth.get("email") or request.headers.get("X-User-Email", ""),
+        "phone": auth.get("phone") or "",
+        "name": auth.get("name") or "",
+        "role": auth.get("role") or request.headers.get("X-User-Role", "user"),
+        "token": auth.get("token") or token,
+        "isLoggedIn": bool(auth.get("isLoggedIn") or auth.get("token") or token or auth.get("userId")),
+    }
+
+
+def service_unavailable_response():
+    return jsonify({"success": False, "error": "Firestore service is not configured"}), 503
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -182,6 +234,129 @@ def health_check():
     })
 
 
+@app.route('/training-status', methods=['GET'])
+def training_status():
+    if assistant is None:
+        return jsonify({
+            "snapshotEnabled": False,
+            "cachedMuseumCount": 0,
+            "isTraining": False,
+            "lastSnapshotAt": None,
+            "lastTrainedAt": None,
+            "lastError": "Chatbot engine failed to initialize"
+        }), 503
+
+    return jsonify(assistant.get_training_status()), 200
+
+
+@app.route('/production-chat', methods=['POST'])
+def production_chat():
+    if production_chatbot is None:
+        return service_unavailable_response()
+
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message", "")).strip()
+    if not message:
+        return jsonify({"success": False, "error": "Message is required"}), 400
+
+    response = production_chatbot.handle(
+        message,
+        request_user_context(),
+        data.get("context") if isinstance(data.get("context"), dict) else {}
+    )
+    if not response:
+        response = {"message": "I can help with tickets, timings, prices, QR codes, booking status, cancellation, and FAQs.", "intent": "unknown"}
+
+    return jsonify({"success": True, **response}), 200
+
+
+@app.route('/booking/availability', methods=['POST'])
+def booking_availability():
+    if production_booking_service is None:
+        return service_unavailable_response()
+
+    data = request.get_json(silent=True) or {}
+    try:
+        result = production_booking_service.check_availability(
+            museum_id=str(data.get("museumId", "")),
+            query=str(data.get("museumName") or data.get("query") or ""),
+            visit_date=str(data.get("visitDate", "")),
+            tickets=int(data.get("tickets") or 1),
+        )
+        return jsonify({"success": True, "availability": result}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 400
+
+
+@app.route('/booking/<booking_id>', methods=['GET'])
+def booking_status(booking_id: str):
+    if production_booking_service is None:
+        return service_unavailable_response()
+
+    try:
+        booking = production_booking_service.get_owned_booking(request_user_context(), booking_id)
+        return jsonify({"success": True, "booking": booking}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 404
+
+
+@app.route('/booking/<booking_id>/cancel', methods=['POST'])
+def cancel_booking(booking_id: str):
+    if production_booking_service is None:
+        return service_unavailable_response()
+
+    try:
+        booking = production_booking_service.cancel_ticket(request_user_context(), booking_id)
+        return jsonify({"success": True, "booking": booking}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 400
+
+
+@app.route('/booking/<booking_id>/qr', methods=['GET'])
+def booking_qr(booking_id: str):
+    if production_booking_service is None:
+        return service_unavailable_response()
+
+    try:
+        booking = production_booking_service.generate_qr_ticket(request_user_context(), booking_id)
+        return jsonify({"success": True, "booking": booking, "qrDataUrl": booking.get("qrDataUrl")}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 404
+
+
+@app.route('/museums/<museum_id>/timings', methods=['GET'])
+def museum_timings(museum_id: str):
+    if production_museum_service is None:
+        return service_unavailable_response()
+
+    try:
+        return jsonify({"success": True, **production_museum_service.get_timings(museum_id=museum_id)}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 404
+
+
+@app.route('/museums/<museum_id>/details', methods=['GET'])
+def museum_details(museum_id: str):
+    if production_museum_service is None:
+        return service_unavailable_response()
+
+    try:
+        return jsonify({"success": True, **production_museum_service.get_details(museum_id=museum_id)}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 404
+
+
+@app.route('/museums/<museum_id>/prices', methods=['GET'])
+def museum_prices(museum_id: str):
+    if production_museum_service is None:
+        return service_unavailable_response()
+
+    try:
+        return jsonify({"success": True, **production_museum_service.get_prices(museum_id=museum_id)}), 200
+    except ServiceError as err:
+        return jsonify({"success": False, "error": str(err)}), 404
+
+
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
@@ -196,6 +371,7 @@ def chat():
         user_message = str(data.get('message', '')).strip()
         session_id = str(data.get('session_id', 'default')).strip() or 'default'
         language = normalize_language(data.get('language', 'en'))
+        auth_context = data.get('auth') if isinstance(data.get('auth'), dict) else {}
 
         if not user_message:
             return jsonify({"error": translate_chat(language, "message_required")}), 400
@@ -209,7 +385,7 @@ def chat():
         logger.info("Processing message for session: %s", session_id)
 
         try:
-            response = assistant.process_message(user_message, session_id, language)
+            response = assistant.process_message(user_message, session_id, language, auth_context)
             response["message"] = localize_bot_message(
                 response.get("message", ""),
                 language,
@@ -228,7 +404,7 @@ def chat():
         try:
             push_payload = {
                 'sender': 'user',
-                'message': user_message,
+                'message': redact_sensitive_chat_message(user_message, response.get('intent')),
                 'timestamp': int(__import__('time').time() * 1000)
             }
             push_chat_message(session_id, push_payload)
@@ -239,6 +415,7 @@ def chat():
                 'intent': response.get('intent'),
                 'language': language,
                 'booking_data': response.get('booking_data', {}),
+                'action': response.get('action'),
                 'timestamp': int(__import__('time').time() * 1000)
             }
             push_chat_message(session_id, bot_payload)
@@ -250,11 +427,12 @@ def chat():
             api_base = os.environ.get('CHATBOT_API_URL') or 'http://localhost:3000'
             store_payload = {
                 'session_id': session_id,
-                'user_message': user_message,
+                'user_message': redact_sensitive_chat_message(user_message, response.get('intent')),
                 'bot_message': response.get('message', ''),
                 'intent': response.get('intent'),
                 'language': language,
-                'booking_data': response.get('booking_data', {})
+                'booking_data': response.get('booking_data', {}),
+                'action': response.get('action')
             }
             try:
                 requests.post(f"{api_base}/api/chat/store", json=store_payload, timeout=2)
@@ -267,7 +445,10 @@ def chat():
             "response": response.get("message", "I'm sorry, I couldn't process that."),
             "intent": response.get("intent", "unknown"),
             "language": language,
-            "booking_data": response.get("booking_data", {})
+            "booking_data": response.get("booking_data", {}),
+            "action": response.get("action"),
+            "data": response.get("data"),
+            "auth_result": response.get("auth_result")
         }), 200
     except Exception as err:
         logger.error("Unexpected error in chat endpoint: %s", err)

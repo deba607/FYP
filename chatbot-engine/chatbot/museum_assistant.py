@@ -5,11 +5,17 @@ from chatterbot import ChatBot
 from chatterbot.trainers import ListTrainer
 from .intent_classifier import IntentClassifier
 from .booking_handler import BookingHandler
+from .firestore_chat_service import FirestoreFirstChatbotService
 import os
 import requests
 import logging
 from pathlib import Path
 import time
+
+try:
+    from firebase_admin_helper import get_firestore_client
+except Exception:
+    get_firestore_client = None
 
 
 logger = logging.getLogger(__name__)
@@ -17,44 +23,31 @@ logger = logging.getLogger(__name__)
 class MuseumAssistant:
     def __init__(self):
         self.db_path = Path(__file__).resolve().parent.parent / 'museum_bot_firestore.db'
+        self.snapshot_enabled = False
+        self.snapshot_disabled_reason = "Automatic ChatterBot retraining is disabled; Firestore is queried at request time"
+        self.is_training = False
+        self.last_snapshot_at = None
+        self.last_trained_at = None
+        self.last_error = None
 
         # Create ChatterBot instance with minimal dependencies
         self.chatbot = self._create_chatbot()
         
-        # Load museum data from the Next.js API, which reads Firestore museums.
-        self.museums_data = self.load_museums_from_firestore_api()
-        
-        # Train the bot with museum-specific conversations
-        try:
-            self.train_bot()
-        except Exception as err:
-            if self._is_database_corruption_error(err):
-                logger.warning("Detected corrupted chatbot database, rebuilding: %s", self.db_path)
-                self._reset_chatbot_database()
-                self.chatbot = self._create_chatbot()
-                try:
-                    self.train_bot()
-                except Exception as second_err:
-                    if not self._is_database_corruption_error(second_err):
-                        raise
-
-                    # If stale processes keep the old DB locked, switch to a fresh DB file.
-                    recovered_name = f"museum_bot_recovered_{int(time.time())}.db"
-                    self.db_path = self.db_path.with_name(recovered_name)
-                    logger.warning("Using fresh chatbot database due to locked/corrupted DB files: %s", self.db_path)
-                    self.chatbot = self._create_chatbot()
-                    self.train_bot()
-            else:
-                raise
+        # Museum data must come from Firestore at request time, not trained ChatterBot data.
+        self.museums_data = []
         
         self.sessions = {}
         self.intent_classifier = IntentClassifier()
         self.booking_handler = BookingHandler()
-        # Simple in-memory user store for chatbot-driven signup/signin (development use only)
-        self.users = {}
+        try:
+            self.firestore_chat_service = FirestoreFirstChatbotService()
+        except Exception as err:
+            self.firestore_chat_service = None
+            logger.warning("Firestore-first chatbot service disabled: %s", err)
 
-    def _create_chatbot(self) -> ChatBot:
-        db_uri = f"sqlite:///{self.db_path.as_posix()}"
+    def _create_chatbot(self, db_path: Path = None) -> ChatBot:
+        path = db_path or self.db_path
+        db_uri = f"sqlite:///{path.as_posix()}"
         return ChatBot(
             'MuseumBot',
             storage_adapter='chatterbot.storage.SQLStorageAdapter',
@@ -74,13 +67,63 @@ class MuseumAssistant:
         return "database disk image is malformed" in error_text or "malformed" in error_text
 
     def _reset_chatbot_database(self) -> None:
+        self._remove_database_files(self.db_path)
+
+    def _remove_database_files(self, db_path: Path) -> None:
         for suffix in ("", "-wal", "-shm"):
-            file_path = Path(f"{self.db_path}{suffix}")
+            file_path = Path(f"{db_path}{suffix}")
             try:
                 if file_path.exists():
                     file_path.unlink()
             except Exception as delete_err:
-                logger.warning("Failed to remove corrupted DB file %s: %s", file_path, delete_err)
+                logger.warning("Failed to remove chatbot DB file %s: %s", file_path, delete_err)
+
+    def normalize_museum_record(self, row: Dict[str, Any], doc_id: str = "") -> Dict[str, Any]:
+        name = str(row.get("name") or row.get("Museum Name") or "").strip()
+        if not name:
+            return {}
+
+        price_raw = row.get("price", 200)
+        try:
+            price = float(price_raw)
+        except (TypeError, ValueError):
+            price = 200.0
+
+        museum_id = str(row.get("museum_id") or row.get("id") or doc_id or "").strip()
+        return {
+            "id": str(row.get("id") or doc_id or museum_id).strip(),
+            "museum_id": museum_id,
+            "name": name,
+            "state": str(row.get("state") or row.get("State/UT") or "").strip(),
+            "location": str(row.get("location") or row.get("City/Location") or "").strip(),
+            "category": str(row.get("category") or row.get("Category/Type") or "").strip(),
+            "description": str(row.get("description") or "").strip(),
+            "imageUrl": str(row.get("imageUrl") or row.get("image") or "").strip(),
+            "price": price,
+            "prices": row.get("prices") or {},
+            "raw": row,
+        }
+
+    def load_museums_from_firestore(self) -> List[Dict[str, Any]]:
+        """Load museums directly from Firestore, falling back to the Next.js API."""
+        client = get_firestore_client() if get_firestore_client else None
+        if not client:
+            self.snapshot_disabled_reason = "Firebase Admin Firestore client unavailable; using /api/museums fallback"
+            return self.load_museums_from_firestore_api()
+
+        try:
+            museums = []
+            docs = client.collection("museums").stream()
+            for doc in docs:
+                record = self.normalize_museum_record(doc.to_dict() or {}, doc.id)
+                if record:
+                    museums.append(record)
+
+            return sorted(museums, key=lambda m: ((m.get("location") or ""), (m.get("name") or "")))
+        except Exception as err:
+            self.snapshot_disabled_reason = f"Firestore load failed; using /api/museums fallback: {err}"
+            logger.warning("Unable to load museums directly from Firestore: %s", err)
+            return self.load_museums_from_firestore_api()
 
     def load_museums_from_firestore_api(self):
         """Load museum data from the Firestore-backed Next.js API."""
@@ -91,29 +134,13 @@ class MuseumAssistant:
             response.raise_for_status()
             payload = response.json()
             for row in payload.get("museums", []):
-                name = str(row.get("name") or "").strip()
-                if not name:
-                    continue
-                price_raw = row.get("price", 200)
-                try:
-                    price = float(price_raw)
-                except (TypeError, ValueError):
-                    price = 200.0
-                museums.append({
-                    "museum_id": str(row.get("museum_id") or row.get("id") or "").strip(),
-                    "name": name,
-                    "state": str(row.get("state") or "").strip(),
-                    "location": str(row.get("location") or "").strip(),
-                    "category": str(row.get("category") or "").strip(),
-                    "description": str(row.get("description") or "").strip(),
-                    "price": price,
-                    "prices": row.get("prices") or {},
-                    "raw": row,
-                })
+                record = self.normalize_museum_record(row, str(row.get("id") or ""))
+                if record:
+                    museums.append(record)
         except Exception as err:
             logger.warning("Unable to load Firestore museums from %s/api/museums: %s", api_base, err)
 
-        return museums
+        return sorted(museums, key=lambda m: ((m.get("location") or ""), (m.get("name") or "")))
 
     def refresh_museums_from_firestore_api(self) -> None:
         """Refresh museum data so chatbot search reflects current Firestore records."""
@@ -124,9 +151,17 @@ class MuseumAssistant:
     def normalize_place_text(self, value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
-    def train_bot(self):
+    def clean_requested_place(self, value: str) -> str:
+        text = self.normalize_place_text(value)
+        text = re.sub(r"\b(the|city|state|please|museum|museums)\b", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def train_bot(self, chatbot: ChatBot = None, museums_data: List[Dict[str, Any]] = None):
         """Train the chatbot with museum-specific conversations"""
-        trainer = ListTrainer(self.chatbot)
+        logger.info("ChatterBot training skipped. Live museum, FAQ, booking, pricing, and timing data is read from Firestore at request time.")
+        return
+        trainer = ListTrainer(chatbot or self.chatbot)
+        museums_for_training = museums_data if museums_data is not None else self.museums_data
         
         # Museum hours training
         trainer.train([
@@ -177,7 +212,7 @@ class MuseumAssistant:
         ])
         
         # Train with Indian Museums data
-        self.train_indian_museums_data(trainer)
+        self.train_indian_museums_data(trainer, museums_for_training)
         
         # General queries
         trainer.train([
@@ -233,14 +268,31 @@ class MuseumAssistant:
             "Please confirm and I'll initiate the payment flow for your booking."
         ])
 
-    def train_indian_museums_data(self, trainer):
+        # Full-service action training. Deterministic handlers perform the real work.
+        trainer.train([
+            "What can you do?",
+            "I can help you sign up, sign in, search museums, book tickets, confirm demo payment, show your tickets, and check ticket status by Booking ID.",
+            "Show my tickets",
+            "I can show all tickets linked with your logged-in account.",
+            "Show ticket BM123456789",
+            "I can show that ticket only if it belongs to your logged-in account.",
+            "Ticket status",
+            "Please provide your Booking ID, for example: show ticket BM123456789.",
+            "Details of Indian Museum",
+            "I can share museum details from the Firestore museum catalog."
+        ])
+
+    def train_indian_museums_data(self, trainer, museums_data: List[Dict[str, Any]] = None):
         """Train chatbot only with museums loaded from the Firestore-backed API."""
+        logger.info("Museum-specific ChatterBot training skipped. Firestore is the source of truth.")
+        return
+        museums = museums_data if museums_data is not None else self.museums_data
         
         # Group museums by state
         states = {}
         categories = {}
         
-        for museum in self.museums_data:
+        for museum in museums:
             state = museum.get('state', '') or museum.get('State/UT', '')
             name = museum.get('name', '') or museum.get('Museum Name', '')
             city = museum.get('location', '') or museum.get('City/Location', '')
@@ -283,7 +335,7 @@ class MuseumAssistant:
             ])
         
         # Train QA pairs per museum to improve knowledge and booking prompts
-        for museum in self.museums_data:
+        for museum in museums:
             name = museum.get('name', '').strip()
             city = museum.get('location', '').strip()
             state = museum.get('state', '').strip()
@@ -331,22 +383,149 @@ class MuseumAssistant:
             }
         return self.sessions[session_id]
 
-    def process_message(self, message: str, session_id: str = "default", language: str = "en") -> Dict[str, Any]:
+    def sync_auth_context(self, session: Dict[str, Any], auth_context: Dict[str, Any]) -> None:
+        if not auth_context:
+            return
+
+        if auth_context.get("email") or auth_context.get("token") or auth_context.get("userId"):
+            session["user"] = {
+                "email": auth_context.get("email") or session.get("user", {}).get("email", ""),
+                "token": auth_context.get("token") or session.get("user", {}).get("token"),
+                "id": auth_context.get("userId") or session.get("user", {}).get("id")
+            }
+
+    def is_authenticated(self, session: Dict[str, Any], auth_context: Dict[str, Any]) -> bool:
+        return bool(
+            auth_context.get("isLoggedIn") or
+            auth_context.get("token") or
+            auth_context.get("userId") or
+            session.get("user", {}).get("token")
+        )
+
+    def auth_required_response(self, intent: str) -> Dict[str, Any]:
+        return {
+            "message": "Please sign in first to use this service. You can type \"login\" or \"sign up\" here in the chatbot.",
+            "intent": intent,
+            "booking_data": {},
+            "action": {"type": "auth_required"}
+        }
+
+    def help_response(self, is_logged_in: bool) -> Dict[str, Any]:
+        lines = [
+            "I can help with these services:",
+            "",
+            "- Sign up or sign in",
+            "- Search museums by city or state",
+            "- Ask museum details, price, location, timings, and discounts"
+        ]
+        if is_logged_in:
+            lines.extend([
+                "- Book museum tickets",
+                "- Confirm demo payment",
+                "- Show all my tickets",
+                "- Show ticket status by Booking ID"
+            ])
+        else:
+            lines.append("- Login-required: book tickets, payment, my tickets, and ticket status")
+
+        return {"message": "\n".join(lines), "intent": "help", "booking_data": {}}
+
+    def extract_booking_id_from_text(self, text: str) -> str:
+        match = re.search(r"\b(?:BM|BK)\d+\b", text or "", re.IGNORECASE)
+        return match.group(0).upper() if match else ""
+
+    def process_message(self, message: str, session_id: str = "default", language: str = "en", auth_context: Dict[str, Any] = None) -> Dict[str, Any]:
         session = self.get_or_create_session(session_id)
         session["language"] = language
-        self.refresh_museums_from_firestore_api()
+        auth_context = auth_context or {}
+        self.sync_auth_context(session, auth_context)
+        is_logged_in = self.is_authenticated(session, auth_context)
+
+        # Auto-refresh museum cache on first query if empty to support fuzzy/fallback queries
+        if not self.museums_data:
+            try:
+                self.refresh_museums_from_firestore_api()
+            except Exception as e:
+                logger.warning("Auto-refreshing local museums cache failed: %s", e)
+
+        if self.firestore_chat_service:
+            live_response = self.firestore_chat_service.handle(
+                message,
+                {
+                    **auth_context,
+                    **(session.get("user") or {}),
+                    "isLoggedIn": is_logged_in,
+                },
+                session.get("booking_data", {})
+            )
+            if live_response:
+                return {
+                    "message": live_response.get("message", ""),
+                    "intent": live_response.get("intent", "unknown"),
+                    "booking_data": session.get("booking_data", {}),
+                    "action": live_response.get("action"),
+                    "data": live_response.get("data", {}),
+                }
         
         # Classify intent
         intent = self.intent_classifier.classify(message)
         if self.is_museum_list_query(message):
             intent = "search_museums"
 
+        if intent == "help":
+            return self.help_response(is_logged_in)
+
+        if intent == "my_tickets":
+            if not is_logged_in:
+                return self.auth_required_response(intent)
+            return {
+                "message": "Here are the tickets linked with your logged-in account.",
+                "intent": "my_tickets",
+                "booking_data": session.get("booking_data", {}),
+                "action": {"type": "show_my_tickets"}
+            }
+
+        if intent == "show_ticket_by_id":
+            booking_id = self.extract_booking_id_from_text(message)
+            if not booking_id:
+                return {
+                    "message": "Please provide your Booking ID, for example: show ticket BM123456789.",
+                    "intent": "show_ticket_by_id",
+                    "booking_data": session.get("booking_data", {})
+                }
+            if not is_logged_in:
+                return self.auth_required_response(intent)
+            return {
+                "message": f"I will show ticket {booking_id} if it belongs to your logged-in account.",
+                "intent": "show_ticket_by_id",
+                "booking_data": session.get("booking_data", {}),
+                "action": {"type": "show_ticket_by_id", "bookingId": booking_id}
+            }
+
+        if intent in ["museum_info", "pricing", "discount"]:
+            museum = self.extract_museum_from_text(message)
+            if museum:
+                return {
+                    "message": self.format_museum_details_response(museum),
+                    "intent": "museum_info",
+                    "booking_data": session.get("booking_data", {})
+                }
+
+        if intent == "general":
+            museum = self.extract_museum_from_text(message)
+            if museum:
+                return {
+                    "message": self.format_museum_details_response(museum),
+                    "intent": "museum_info",
+                    "booking_data": session.get("booking_data", {})
+                }
+
         # --- Search Museums flow ---
         if intent == "search_museums" or session.get("in_search_museums_flow"):
             session["in_search_museums_flow"] = True
             loc = self.extract_location(message)
             if loc:
-                results = self.get_museums_by_location(loc)
+                results = self.search_museums_live(loc)
                 session["in_search_museums_flow"] = False
                 session["waiting_for_location"] = False
                 if results:
@@ -374,6 +553,15 @@ class MuseumAssistant:
                         "booking_data": session.get("booking_data", {})
                     }
                 else:
+                    museum = self.extract_museum_from_text(message)
+                    if museum:
+                        session["in_search_museums_flow"] = False
+                        session["waiting_for_location"] = False
+                        return {
+                            "message": self.format_museum_details_response(museum),
+                            "intent": "museum_info",
+                            "booking_data": session.get("booking_data", {})
+                        }
                     session["waiting_for_location"] = True
                     response = "Sure! Which city or state/UT would you like to search museums for?"
                     return {
@@ -415,23 +603,32 @@ class MuseumAssistant:
                     data = resp.json()
                     if resp.status_code in (200,201) and data.get('success'):
                         token = data.get('token')
-                        session["user"] = {"email": temp["email"], "token": token}
+                        user = data.get("user") or {}
+                        session["user"] = {"email": user.get("email") or temp["email"], "token": token, "id": user.get("id")}
                         session["in_signup_flow"] = False
                         session.pop("temp_user", None)
-                        return {"message": f"Account created successfully for {temp['email']}. You are now signed in.", "intent": "signup", "booking_data": session.get("booking_data", {})}
+                        return {
+                            "message": f"Account created successfully for {temp['email']}. You are now signed in.",
+                            "intent": "signup",
+                            "booking_data": session.get("booking_data", {}),
+                            "action": {"type": "auth_success"},
+                            "auth_result": {
+                                "token": token,
+                                "firebaseCustomToken": data.get("firebaseCustomToken"),
+                                "user": user
+                            }
+                        }
                     else:
                         # server-side error
                         session["in_signup_flow"] = False
                         session.pop("temp_user", None)
                         msg = data.get('message') or 'Signup failed on server.'
                         return {"message": msg, "intent": "signup", "booking_data": session.get("booking_data", {})}
-                except Exception:
-                    # fallback to local store
-                    self.users[temp["email"]] = temp["password"]
-                    session["user"] = {"email": temp["email"]}
+                except Exception as err:
                     session["in_signup_flow"] = False
                     session.pop("temp_user", None)
-                    return {"message": f"Account created locally for {temp['email']}. You are now signed in.", "intent": "signup", "booking_data": session.get("booking_data", {})}
+                    logger.warning("Chatbot signup failed via API: %s", err)
+                    return {"message": "Signup service is unavailable right now. Please try again in a moment.", "intent": "signup", "booking_data": session.get("booking_data", {})}
 
         # --- Signin flow ---
         if intent == "signin" or session.get("in_signin_flow"):
@@ -462,24 +659,26 @@ class MuseumAssistant:
                     session.pop("temp_user", None)
                     if resp.status_code == 200 and data.get('success'):
                         token = data.get('token')
-                        session["user"] = {"email": temp.get("email"), "token": token}
-                        return {"message": f"Signed in successfully as {temp['email']}.", "intent": "signin", "booking_data": session.get("booking_data", {})}
+                        user = data.get("user") or {}
+                        session["user"] = {"email": user.get("email") or temp.get("email"), "token": token, "id": user.get("id")}
+                        return {
+                            "message": f"Signed in successfully as {user.get('email') or temp['email']}.",
+                            "intent": "signin",
+                            "booking_data": session.get("booking_data", {}),
+                            "action": {"type": "auth_success"},
+                            "auth_result": {
+                                "token": token,
+                                "firebaseCustomToken": data.get("firebaseCustomToken"),
+                                "user": user
+                            }
+                        }
                     else:
-                        # fallback to local check
-                        stored = self.users.get(temp["email"])
-                        if stored and stored == pwd:
-                            session["user"] = {"email": temp["email"]}
-                            return {"message": f"Signed in locally as {temp['email']}.", "intent": "signin", "booking_data": session.get("booking_data", {})}
                         return {"message": data.get('message') or 'Sign in failed — email or password incorrect.', "intent": "signin", "booking_data": session.get("booking_data", {})}
-                except Exception:
-                    # fallback to local validate
+                except Exception as err:
+                    logger.warning("Chatbot signin failed via API: %s", err)
                     session["in_signin_flow"] = False
                     session.pop("temp_user", None)
-                    stored = self.users.get(temp["email"])
-                    if stored and stored == pwd:
-                        session["user"] = {"email": temp["email"]}
-                        return {"message": f"Signed in locally as {temp['email']}.", "intent": "signin", "booking_data": session.get("booking_data", {})}
-                    return {"message": "Sign in failed — unable to reach auth server and local credentials not available.", "intent": "signin", "booking_data": session.get("booking_data", {})}
+                    return {"message": "Sign in service is unavailable right now. Please try again in a moment.", "intent": "signin", "booking_data": session.get("booking_data", {})}
 
         # --- Search ticket / museum ---
         if intent == "search_ticket":
@@ -494,6 +693,8 @@ class MuseumAssistant:
 
         # --- Confirm / Payment ---
         if intent in ["confirm_booking", "payment"]:
+            if not is_logged_in:
+                return self.auth_required_response(intent)
             booking = session.get("booking_data", {})
             if booking.get("ready_to_confirm"):
                 # Attempt to create booking via server API
@@ -545,24 +746,16 @@ class MuseumAssistant:
         
         # Check if we're in booking flow or starting one
         if intent in ["book_ticket", "check_availability"] or session["in_booking_flow"]:
+            if not is_logged_in:
+                return self.auth_required_response(intent)
             session["in_booking_flow"] = True
             
-            # Extract museum details if present in the message and not already set
             if not session.get("booking_data"):
                 session["booking_data"] = {}
-            if not session["booking_data"].get("museum_name"):
-                museum = self.extract_museum_from_text(message)
-                if museum:
-                    session["booking_data"]["museum_name"] = museum["name"]
-                    session["booking_data"]["museum_location"] = museum["location"]
-                    session["booking_data"]["museum_state"] = museum["state"]
-                    session["booking_data"]["museum_id"] = museum["museum_id"]
-                    session["booking_data"]["museum_category"] = museum["category"]
-                    session["booking_data"]["pricePerTicket"] = museum["price"]
-                    # Also keep camelCase variants for frontend compatibility
-                    session["booking_data"]["museumName"] = museum["name"]
-                    session["booking_data"]["museumLocation"] = museum["location"]
-                    session["booking_data"]["museumCategory"] = museum["category"]
+
+            museum_prompt = self.ensure_booking_museum_details(session, message, language)
+            if museum_prompt:
+                return museum_prompt
             
             booking_response = self.booking_handler.handle(
                 message, 
@@ -641,6 +834,167 @@ class MuseumAssistant:
         if session_id in self.sessions:
             del self.sessions[session_id]
 
+    def get_training_status(self) -> Dict[str, Any]:
+        return {
+            "snapshotEnabled": self.snapshot_enabled,
+            "snapshotDisabledReason": self.snapshot_disabled_reason or None,
+            "cachedMuseumCount": len(self.museums_data),
+            "isTraining": self.is_training,
+            "lastSnapshotAt": self.last_snapshot_at,
+            "lastTrainedAt": self.last_trained_at,
+            "lastError": self.last_error,
+            "sourceOfTruth": "firestore_request_time_queries",
+            "chatterBotRole": "small_talk_fallback_only",
+        }
+
+    def format_museum_details_response(self, museum: Dict[str, Any]) -> str:
+        price = museum.get("price") or 200
+        try:
+            price_text = f"INR {int(float(price))}"
+        except (TypeError, ValueError):
+            price_text = f"INR {price}"
+
+        lines = [
+            f"{museum.get('name') or 'Museum'} details:",
+            f"Location: {museum.get('location') or 'Not available'}",
+            f"State: {museum.get('state') or 'Not available'}",
+            f"Category: {museum.get('category') or 'Not available'}",
+            f"Base price: {price_text}",
+        ]
+        description = museum.get("description")
+        if description:
+            lines.append(f"Description: {description}")
+        return "\n".join(lines)
+
+    def search_museums_live(self, query: str) -> List[Dict[str, Any]]:
+        results = []
+        if self.firestore_chat_service:
+            try:
+                results = self.firestore_chat_service.museums.search(query)
+            except Exception as err:
+                logger.warning("Live Firestore museum search failed: %s", err)
+
+        if not results:
+            results = self.get_museums_by_location(query) or self.find_museums(query)
+
+        deduped = []
+        seen = set()
+        for museum in results:
+            key = str(museum.get("museum_id") or museum.get("id") or museum.get("name") or "").lower()
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(museum)
+        return deduped
+
+    def ensure_booking_museum_details(self, session: Dict[str, Any], message: str, language: str = "en") -> Dict[str, Any]:
+        """Require a Firestore museum before date/time/ticket collection continues."""
+        booking_data = session.setdefault("booking_data", {})
+        if booking_data.get("museum_name") or booking_data.get("museumName"):
+            return None
+
+        if not self.has_booking_museum_search_text(message):
+            return {
+                "message": "Which museum would you like to book? Please type the museum name or a city/location, for example: `book ticket in Kolkata`.",
+                "intent": "book_ticket",
+                "booking_data": booking_data,
+            }
+
+        matches = self.search_museums_for_booking(message)
+        exact_match = self.find_exact_museum_match(message, matches)
+        if exact_match:
+            self.apply_museum_to_booking_data(booking_data, exact_match)
+            return None
+
+        if len(matches) == 1:
+            self.apply_museum_to_booking_data(booking_data, matches[0])
+            return None
+
+        if len(matches) > 1:
+            return {
+                "message": self.format_booking_museum_choices(matches),
+                "intent": "book_ticket",
+                "booking_data": booking_data,
+            }
+
+        return {
+            "message": "I could not find that museum in Firestore. Please enter a museum name or location from the museum collection.",
+            "intent": "book_ticket",
+            "booking_data": booking_data,
+        }
+
+    def apply_museum_to_booking_data(self, booking_data: Dict[str, Any], museum: Dict[str, Any]) -> None:
+        """Store required museum fields using both backend and frontend-compatible names."""
+        prices = museum.get("prices") if isinstance(museum.get("prices"), dict) else {}
+        price = museum.get("price") or prices.get("Adult") or prices.get("adult") or 200
+        museum_id = museum.get("museum_id") or museum.get("id") or ""
+        name = museum.get("name") or "Museum ticket"
+        location = museum.get("location") or ""
+        state = museum.get("state") or ""
+        category = museum.get("category") or ""
+
+        booking_data.update({
+            "museum_name": name,
+            "museum_location": location,
+            "museum_state": state,
+            "museum_id": museum_id,
+            "museum_category": category,
+            "museum_prices": prices,
+            "pricePerTicket": price,
+            "museumName": name,
+            "museumLocation": location,
+            "museumState": state,
+            "museumId": museum_id,
+            "museumCategory": category,
+        })
+
+    def has_booking_museum_search_text(self, message: str) -> bool:
+        """Return true only when the booking message contains a museum/location clue."""
+        text = re.sub(r"[^a-z0-9 ]+", " ", str(message or "").lower())
+        stop_words = {
+            "book", "booking", "ticket", "tickets", "reserve", "reservation", "buy",
+            "purchase", "please", "want", "need", "show", "check", "availability",
+            "for", "to", "in", "at", "near", "of", "the", "a", "an", "my", "me",
+            "one", "two", "three", "four", "five", "adult", "child", "student",
+            "senior", "citizen", "professor", "researcher", "scientist",
+        }
+        tokens = [token for token in text.split() if len(token) >= 3 and token not in stop_words and not token.isdigit()]
+        return bool(tokens)
+
+    def search_museums_for_booking(self, message: str) -> List[Dict[str, Any]]:
+        """Search live Firestore first, then local cached data if Firestore is unavailable."""
+        return self.search_museums_live(message)
+
+    def find_exact_museum_match(self, message: str, museums: List[Dict[str, Any]]) -> Dict[str, Any]:
+        normalized_message = re.sub(r"[^a-z0-9 ]+", " ", str(message or "").lower())
+        normalized_message = re.sub(r"\s+", " ", normalized_message).strip()
+        exact = []
+        contained = []
+        for museum in museums:
+            name = re.sub(r"[^a-z0-9 ]+", " ", str(museum.get("name") or "").lower())
+            name = re.sub(r"\s+", " ", name).strip()
+            if not name:
+                continue
+            if normalized_message == name:
+                exact.append(museum)
+            elif name in normalized_message:
+                contained.append(museum)
+        if len(exact) == 1:
+            return exact[0]
+        if len(contained) == 1:
+            return contained[0]
+        return None
+
+    def format_booking_museum_choices(self, museums: List[Dict[str, Any]]) -> str:
+        lines = ["I found multiple museums. Please choose one for this booking:"]
+        for index, museum in enumerate(museums[:8], start=1):
+            lines.append(f"{index}. {museum.get('name') or 'Unnamed museum'}")
+            place = ", ".join([value for value in [museum.get("location"), museum.get("state")] if value])
+            if place:
+                lines.append(f"   {place}")
+        lines.append("")
+        lines.append("After you choose the museum, I will ask only for the required booking details.")
+        return "\n".join(lines)
+
     def find_museums(self, query: str) -> List[Dict[str, Any]]:
         """Simple fuzzy search over loaded museum data"""
         q = query.lower()
@@ -707,7 +1061,7 @@ class MuseumAssistant:
         place_candidates = sorted([value for value in cities.union(states) if value], key=len, reverse=True)
 
         phrase_match = re.search(r"\b(?:in|near|at)\s+([a-z0-9 ]+?)(?:\s+museums?|\s+museum|\?|$)", normalized_text)
-        requested_place = phrase_match.group(1).strip() if phrase_match else ""
+        requested_place = self.clean_requested_place(phrase_match.group(1)) if phrase_match else ""
         
         for state in sorted(states, key=len, reverse=True):
             if re.search(r'\b' + re.escape(state) + r'\b', normalized_text):
@@ -743,6 +1097,24 @@ class MuseumAssistant:
         text_lower = text.lower().strip()
         if not text_lower:
             return None
+
+        if self.firestore_chat_service:
+            try:
+                museum = self.firestore_chat_service.museums.resolve_museum(query=text)
+                return {
+                    "id": museum.get("id") or "",
+                    "museum_id": museum.get("museum_id") or museum.get("id") or "",
+                    "name": museum.get("name") or "",
+                    "location": museum.get("location") or "",
+                    "state": museum.get("state") or "",
+                    "category": museum.get("category") or "",
+                    "description": museum.get("description") or "",
+                    "price": museum.get("price") or 200,
+                    "prices": museum.get("prices") or {},
+                    "raw": museum,
+                }
+            except Exception:
+                pass
 
         # Sort museums by name length descending so we match the most specific name first
         sorted_museums = sorted(self.museums_data, key=lambda m: len(m.get('name', '')), reverse=True)

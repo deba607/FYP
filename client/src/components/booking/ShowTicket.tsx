@@ -10,8 +10,17 @@ type BookingLookupResult = {
   bookingId: string;
   name: string;
   email: string;
+  phone: string;
   visitDate: string;
   timeSlot: string;
+  numberOfTickets: number;
+  visitorType: string;
+  totalAmount: number;
+  museumName?: string | null;
+  museumLocation?: string | null;
+  museumCategory?: string | null;
+  status: string;
+  paymentStatus?: string;
   createdAt: string;
 };
 
@@ -69,8 +78,17 @@ export default function ShowTicket() {
         bookingId: found.bookingId,
         name: found.name,
         email: found.email,
+        phone: found.phone,
         visitDate: found.visitDate,
         timeSlot: found.timeSlot,
+        numberOfTickets: found.numberOfTickets,
+        visitorType: found.visitorType,
+        totalAmount: found.totalAmount,
+        museumName: found.museumName,
+        museumLocation: found.museumLocation,
+        museumCategory: found.museumCategory,
+        status: found.status,
+        paymentStatus: found.paymentStatus,
         createdAt: found.createdAt
       });
     } catch (err) {
@@ -100,6 +118,13 @@ export default function ShowTicket() {
         <div className="rounded border bg-background p-4 max-w-lg mx-auto">
           <div className="mb-2 text-sm text-muted-foreground">Booking ID</div>
           <div className="mb-2 font-mono font-semibold">{result.bookingId}</div>
+          <div className="mb-4 rounded-md border bg-muted/40 p-3">
+            <div className="text-lg font-semibold">{result.museumName || 'Museum ticket'}</div>
+            <div className="text-sm text-muted-foreground">{result.museumLocation || 'Location not available'}</div>
+            {result.museumCategory ? (
+              <div className="mt-1 text-xs text-muted-foreground">Category: {result.museumCategory}</div>
+            ) : null}
+          </div>
 
           {qrDataUrl && (
             <div className="mb-4 rounded-lg border bg-white p-4 text-center">
@@ -123,12 +148,32 @@ export default function ShowTicket() {
               <div className="font-medium">{result.email}</div>
             </div>
             <div>
+              <div className="text-sm text-muted-foreground">Phone</div>
+              <div className="font-medium">{result.phone || '-'}</div>
+            </div>
+            <div>
               <div className="text-sm text-muted-foreground">Date</div>
               <div className="font-medium">{new Date(result.visitDate).toLocaleDateString()}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground">Time</div>
               <div className="font-medium">{result.timeSlot}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Tickets</div>
+              <div className="font-medium">{result.numberOfTickets} x {result.visitorType}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Amount</div>
+              <div className="font-medium">INR {result.totalAmount}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Booking Status</div>
+              <div className="font-medium">{result.status}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Payment</div>
+              <div className="font-medium">{result.paymentStatus || '-'}</div>
             </div>
           </div>
 

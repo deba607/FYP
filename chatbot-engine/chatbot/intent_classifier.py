@@ -2,7 +2,7 @@ class IntentClassifier:
     def __init__(self):
         self.intents = {
             "book_ticket": [
-                "book", "booking", "reserve", "reservation", "ticket",
+                "book", "booking", "reserve", "reservation",
                 "buy tickets", "purchase", "get tickets", "want to visit",
                 "\u091f\u093f\u0915\u091f", "\u092c\u0941\u0915", "\u0906\u0930\u0915\u094d\u0937\u0923",
                 "\u099f\u09bf\u0995\u09bf\u099f", "\u09ac\u09c1\u0995", "\u09b0\u09bf\u099c\u09be\u09b0\u09cd\u09ad",
@@ -33,10 +33,23 @@ class IntentClassifier:
                 "\u0b95\u0b9f\u0bcd\u0b9f\u0ba3\u0bae\u0bcd", "\u0baa\u0ba3\u0bae\u0bcd"
             ],
             "search_ticket": [
-                "search ticket", "find ticket", "show ticket", "my ticket", "find booking",
+                "search ticket", "find ticket", "find booking",
                 "\u091f\u093f\u0915\u091f \u0916\u094b\u091c", "\u092c\u0941\u0915\u093f\u0902\u0917 \u0916\u094b\u091c",
                 "\u099f\u09bf\u0995\u09bf\u099f \u0996\u09c1\u0981\u099c", "\u09ac\u09c1\u0995\u09bf\u0982 \u0996\u09c1\u0981\u099c",
                 "\u0b9f\u0bbf\u0b95\u0bcd\u0b95\u0bc6\u0b9f\u0bcd \u0ba4\u0bc7\u0b9f\u0bc1", "\u0baa\u0ba4\u0bbf\u0bb5\u0bc1 \u0ba4\u0bc7\u0b9f\u0bc1"
+            ],
+            "my_tickets": [
+                "my tickets", "show my tickets", "my bookings", "show my bookings",
+                "ticket history", "booking history", "all tickets", "all my tickets",
+                "my ticket"
+            ],
+            "show_ticket_by_id": [
+                "show ticket", "ticket status", "booking status", "view ticket",
+                "show booking", "view booking"
+            ],
+            "help": [
+                "help", "what can you do", "services", "service", "actions",
+                "commands", "menu", "options"
             ],
             "search_museums": [
                 "list of museums", "museum list", "museums in", "find museums", "show museums",
@@ -76,15 +89,32 @@ class IntentClassifier:
     def classify(self, message: str) -> str:
         message_lower = message.lower()
 
+        if __import__('re').search(r"\bBM\d+\b|\bBK\d+\b", message, __import__('re').IGNORECASE):
+            return "show_ticket_by_id"
+
+        my_ticket_phrases = (
+            "show ticket", "show tickets", "show my ticket", "show my tickets",
+            "my ticket", "my tickets", "all tickets", "all my tickets",
+            "my bookings", "show my bookings", "ticket history", "booking history"
+        )
+        if any(phrase in message_lower for phrase in my_ticket_phrases):
+            return "my_tickets"
+
+        ticket_status_phrases = ("ticket status", "booking status", "view ticket", "view booking")
+        if any(phrase in message_lower for phrase in ticket_status_phrases):
+            return "show_ticket_by_id"
+
         # If there's an obvious booking intent, don't shortcut to search_museums
         booking_keywords = ("book", "ticket", "reserve", "buy", "purchase", "टिकट", "बुक", "টিকিট", "বুক", "டிக்கெட்", "முன்பதிவு")
         if any(keyword in message_lower for keyword in booking_keywords):
             pass
         else:
             museum_list_terms = ("list", "show", "find", "search", "directory", "near", "nearby", "in")
-            if ("museum" in message_lower or "museums" in message_lower) and any(
-                term in message_lower for term in museum_list_terms
-            ):
+            has_list_term = any(
+                __import__('re').search(r"\b" + __import__('re').escape(term) + r"\b", message_lower)
+                for term in museum_list_terms
+            )
+            if ("museum" in message_lower or "museums" in message_lower) and has_list_term:
                 return "search_museums"
 
         scores = {}

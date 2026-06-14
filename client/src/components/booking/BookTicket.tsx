@@ -7,6 +7,7 @@ import { Input } from '../ui/input';
 import { buttonVariants } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
+import type { BookingResponse } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin, Plus, Minus } from 'lucide-react';
 import Listbox from '../ui/listbox';
@@ -126,7 +127,7 @@ function BookTicket() {
   const [time, setTime] = useState(TIME_SLOTS[0]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [success, setSuccess] = useState<null | { id: string; summary: string; qrDataUrl: string }>(null);
+  const [success, setSuccess] = useState<null | { id: string; summary: string; qrDataUrl: string; booking: BookingResponse }>(null);
 
   const uniqueMuseums = useMemo(() => {
     const seen = new Set<string>();
@@ -307,7 +308,8 @@ function BookTicket() {
         setSuccess({
           id: verified.booking.bookingId,
           summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} â€” â‚¹${verified.booking.totalAmount} (demo payment)`,
-          qrDataUrl: await makeTicketQr(verified.booking.bookingId)
+          qrDataUrl: await makeTicketQr(verified.booking.bookingId),
+          booking: verified.booking
         });
 
         try {
@@ -383,7 +385,8 @@ function BookTicket() {
             setSuccess({
               id: verified.booking.bookingId,
               summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`,
-              qrDataUrl: await makeTicketQr(verified.booking.bookingId)
+              qrDataUrl: await makeTicketQr(verified.booking.bookingId),
+              booking: verified.booking
             });
 
             try {
@@ -465,7 +468,25 @@ function BookTicket() {
       {success ? (
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           <div className="font-medium">{translate(language, 'booking.confirmed')} — {success.id}</div>
-          <div className="mt-1 text-sm text-muted-foreground">{success.summary}</div>
+          <div className="mt-3 rounded-md border border-green-200 bg-white p-3 text-slate-800">
+            <div className="text-base font-semibold">{success.booking.museumName || 'Museum ticket'}</div>
+            <div className="text-sm text-slate-600">{success.booking.museumLocation || 'Location not available'}</div>
+            {success.booking.museumCategory ? (
+              <div className="text-xs text-slate-500">Category: {success.booking.museumCategory}</div>
+            ) : null}
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div><span className="text-slate-500">Booking ID:</span> <span className="font-mono font-semibold">{success.booking.bookingId}</span></div>
+              <div><span className="text-slate-500">Name:</span> {success.booking.name}</div>
+              <div><span className="text-slate-500">Email:</span> {success.booking.email}</div>
+              <div><span className="text-slate-500">Phone:</span> {success.booking.phone || '-'}</div>
+              <div><span className="text-slate-500">Date:</span> {new Date(success.booking.visitDate).toLocaleDateString()}</div>
+              <div><span className="text-slate-500">Time:</span> {success.booking.timeSlot}</div>
+              <div><span className="text-slate-500">Tickets:</span> {success.booking.numberOfTickets} x {success.booking.visitorType}</div>
+              <div><span className="text-slate-500">Amount:</span> INR {success.booking.totalAmount}</div>
+              <div><span className="text-slate-500">Status:</span> {success.booking.status}</div>
+              <div><span className="text-slate-500">Payment:</span> {success.booking.paymentStatus || '-'}</div>
+            </div>
+          </div>
           <div className="mt-4 rounded-lg border border-green-200 bg-white p-4 text-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

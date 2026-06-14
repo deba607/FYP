@@ -17,6 +17,7 @@ export type ScanLog = {
   deviceName: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
+  gateAction: 'entry' | 'exit';
   message: string;
 };
 
@@ -143,7 +144,8 @@ export async function logScan(
   ticketId: string,
   deviceId: string,
   outcome: 'granted' | 'denied',
-  message: string
+  message: string,
+  gateAction: 'entry' | 'exit' = 'entry'
 ) {
   const database = getFirebaseRealtimeDatabase();
   const scanRef = database.ref('scan_logs').push();
@@ -176,6 +178,7 @@ export async function logScan(
     deviceName,
     scannedAt: now.toISOString(),
     outcome,
+    gateAction,
     message: message.trim()
   };
 
@@ -206,6 +209,7 @@ export async function getScanLogs(deviceId?: string) {
         deviceName: String(val.deviceName || ''),
         scannedAt: toDateString(val.scannedAt),
         outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
+        gateAction: String(val.gateAction || 'entry') as ScanLog['gateAction'],
         message: String(val.message || '')
       });
     }

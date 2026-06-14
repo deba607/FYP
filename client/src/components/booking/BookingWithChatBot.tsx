@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment, getMyTicketHistory } from '../../lib/api';
 import type { TicketHistoryItem } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
@@ -23,6 +23,7 @@ type ChatMessage = {
   showVisitorPicker?: boolean;
   qrDataUrl?: string;
   qrBookingId?: string;
+  bookingCard?: Partial<TicketHistoryItem>;
   ticketCards?: TicketCard[];
 };
 
@@ -50,10 +51,31 @@ type BookingData = {
   museumCategory?: string;
   museumId?: string;
   pricePerTicket?: number;
+  museum_name?: string;
+  museum_location?: string;
+  museum_category?: string;
+  museum_id?: string;
 };
 
 type TicketCard = TicketHistoryItem & {
   qrDataUrl: string;
+};
+
+type BookingProfile = {
+  name: string;
+  email: string;
+  phone: string;
+};
+
+type MuseumApiItem = {
+  id?: string;
+  museum_id?: string;
+  name?: string;
+  location?: string;
+  state?: string;
+  category?: string;
+  price?: number;
+  prices?: Record<string, number>;
 };
 
 const CHAT_SESSION_KEY = 'bharat_museum_chat_session_id';
@@ -799,6 +821,57 @@ function loadRazorpayScript() {
   });
 }
 
+function normalizeMuseumText(value?: string) {
+  return String(value || '').trim().toLowerCase();
+}
+
+async function resolveBookingMuseumDetails(data: BookingData): Promise<Partial<BookingData>> {
+  const current = {
+    museumName: data.museumName || data.museum_name || '',
+    museumLocation: data.museumLocation || data.museum_location || '',
+    museumCategory: data.museumCategory || data.museum_category || '',
+    museumId: data.museumId || data.museum_id || '',
+    pricePerTicket: data.pricePerTicket
+  };
+
+  if (current.museumName && current.museumLocation) {
+    return current;
+  }
+
+  try {
+    const response = await fetch('/api/museums', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    const museums = Array.isArray(payload?.museums) ? payload.museums as MuseumApiItem[] : [];
+    const wantedId = normalizeMuseumText(current.museumId);
+    const wantedName = normalizeMuseumText(current.museumName);
+
+    const museum = museums.find((item) => {
+      const itemId = normalizeMuseumText(item.museum_id || item.id);
+      const itemName = normalizeMuseumText(item.name);
+      return (
+        (wantedId && itemId === wantedId) ||
+        (wantedName && itemName === wantedName) ||
+        (wantedName && itemName && (itemName.includes(wantedName) || wantedName.includes(itemName)))
+      );
+    });
+
+    if (!museum) {
+      return current;
+    }
+
+    const prices = museum.prices || {};
+    return {
+      museumName: current.museumName || museum.name || '',
+      museumLocation: current.museumLocation || museum.location || '',
+      museumCategory: current.museumCategory || museum.category || '',
+      museumId: current.museumId || museum.museum_id || museum.id || '',
+      pricePerTicket: current.pricePerTicket || museum.price || prices.Adult || prices.adult
+    };
+  } catch {
+    return current;
+  }
+}
+
 function getStoredUserEmail() {
   if (typeof window === 'undefined') return '';
 
@@ -811,6 +884,28 @@ function getStoredUserEmail() {
   } catch {
     return '';
   }
+}
+
+function readBookingProfile(): BookingProfile {
+  if (typeof window === 'undefined') {
+    return { name: '', email: '', phone: '' };
+  }
+
+  let stored: any = null;
+  try {
+    const raw = window.localStorage.getItem(AUTH_USER_KEY);
+    stored = raw ? JSON.parse(raw) : null;
+  } catch {
+    stored = null;
+  }
+
+  const firebaseUser = getFirebaseClientAuth().currentUser as any | null;
+
+  return {
+    name: stored?.name || firebaseUser?.displayName || '',
+    email: stored?.email || firebaseUser?.email || '',
+    phone: stored?.phone || ''
+  };
 }
 
 async function makeTicketQr(bookingId: string) {
@@ -827,6 +922,20 @@ async function makeTicketQr(bookingId: string) {
 
 async function getCurrentIdToken() {
   return getFirebaseClientAuth().currentUser?.getIdToken().catch(() => undefined);
+}
+
+async function getChatAuthContext() {
+  const auth = getFirebaseClientAuth();
+  const firebaseUser = auth.currentUser;
+  const token = await firebaseUser?.getIdToken().catch(() => undefined);
+  const storedEmail = getStoredUserEmail();
+
+  return {
+    token,
+    email: storedEmail || firebaseUser?.email || '',
+    userId: firebaseUser?.uid || '',
+    isLoggedIn: Boolean(firebaseUser || storedEmail)
+  };
 }
 
 function formatTicketDate(value?: string) {
@@ -856,6 +965,7 @@ export default function BookingWithChatBot() {
   const [confirming, setConfirming] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [bookingData, setBookingData] = useState<BookingData>({});
+  const [bookingProfile, setBookingProfile] = useState<BookingProfile>({ name: '', email: '', phone: '' });
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -887,6 +997,23 @@ export default function BookingWithChatBot() {
     );
   }, [bookingData]);
 
+  const contactDetails = useMemo(() => ({
+    name: bookingProfile.name.trim() || name.trim(),
+    email: bookingProfile.email.trim() || email.trim(),
+    phone: bookingProfile.phone.trim() || phone.trim()
+  }), [bookingProfile, name, email, phone]);
+
+  const missingContactFields = useMemo(() => ({
+    name: !bookingProfile.name.trim(),
+    email: !bookingProfile.email.trim(),
+    phone: !bookingProfile.phone.trim()
+  }), [bookingProfile]);
+
+  const contactGridClass = missingContactFields.name && missingContactFields.email
+    ? 'mb-2 grid gap-2 md:grid-cols-2'
+    : 'mb-2 grid gap-2';
+  const showConfirmForm = canConfirm && !confirming;
+
   useEffect(() => {
     if (canConfirm && chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
@@ -898,7 +1025,12 @@ export default function BookingWithChatBot() {
 
   useEffect(() => {
     const auth = getFirebaseClientAuth();
+    const loadProfile = () => setBookingProfile(readBookingProfile());
+    loadProfile();
+    window.addEventListener('user_profile_updated', loadProfile as EventListener);
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      loadProfile();
       let hasStoredUser = false;
       try {
         hasStoredUser = Boolean(window.localStorage.getItem(AUTH_USER_KEY));
@@ -911,7 +1043,9 @@ export default function BookingWithChatBot() {
       setAuthChecked(true);
 
       if (!loggedIn) {
-        setSessionId('');
+        const generated = encodeRtdbKey(makeSessionId());
+        window.sessionStorage.setItem(CHAT_SESSION_KEY, generated);
+        setSessionId(generated);
         return;
       }
 
@@ -921,14 +1055,17 @@ export default function BookingWithChatBot() {
       setSessionId(generated);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      window.removeEventListener('user_profile_updated', loadProfile as EventListener);
+    };
   }, []);
 
   // Initialize welcome message when session is ready.
   useEffect(() => {
     if (!sessionId) return;
 
-    setMessages([
+    setMessages((current) => current.length > 0 ? current : [
       {
         from: 'bot',
         text: translate(language, 'chat.welcome'),
@@ -945,23 +1082,82 @@ export default function BookingWithChatBot() {
     );
   }
 
-  if (!isLoggedIn) {
-    return (
-      <div className="mx-auto w-full max-w-2xl rounded-lg border bg-background p-6 text-center shadow-sm">
-        <MessageCircle className="mx-auto mb-3 h-8 w-8 text-primary" />
-        <h3 className="text-lg font-semibold">Login required</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Please login first to use the chatbot and book museum tickets.
-        </p>
-        <a
-          href="/login?redirect=/booking/chat"
-          className="mt-5 inline-flex rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          Go to Login
-        </a>
-      </div>
+  const applyChatAuthResult = async (authResult: Awaited<ReturnType<typeof sendChatMessage>>['auth_result']) => {
+    if (!authResult?.user) return;
+
+    const auth = getFirebaseClientAuth();
+    if (authResult.firebaseCustomToken) {
+      await signInWithCustomToken(auth, authResult.firebaseCustomToken);
+    }
+
+    if (authResult.token) {
+      window.localStorage.setItem('museum_auth_token', authResult.token);
+    }
+
+    window.localStorage.setItem(AUTH_USER_KEY, JSON.stringify(authResult.user));
+    window.dispatchEvent(new Event('user_profile_updated'));
+    setIsLoggedIn(true);
+
+    const stableSessionId = getStableSessionIdFromLogin();
+    if (stableSessionId) {
+      window.sessionStorage.setItem(CHAT_SESSION_KEY, stableSessionId);
+      setSessionId(stableSessionId);
+    }
+  };
+
+  const buildTicketCards = async (bookingId?: string) => {
+    const token = await getCurrentIdToken();
+    const email = getStoredUserEmail() || getFirebaseClientAuth().currentUser?.email || '';
+
+    if (!token) {
+      throw new Error('Please login again to view your tickets.');
+    }
+
+    const result = await getMyTicketHistory(token, email);
+    const tickets = bookingId
+      ? result.tickets.filter((ticket) => ticket.bookingId.toLowerCase() === bookingId.toLowerCase())
+      : result.tickets;
+
+    return Promise.all(
+      tickets.map(async (ticket) => ({
+        ...ticket,
+        qrDataUrl: await makeTicketQr(ticket.bookingId)
+      }))
     );
-  }
+  };
+
+  const appendTicketCards = async (bookingId?: string) => {
+    const ticketCards = await buildTicketCards(bookingId);
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: 'bot',
+        text: bookingId
+          ? ticketCards.length
+            ? `Ticket ${bookingId} is linked with your account.`
+            : `I could not find ticket ${bookingId} in your logged-in account.`
+          : ticketCards.length
+            ? `You have ${ticketCards.length} ticket${ticketCards.length === 1 ? '' : 's'}.`
+            : 'No tickets found for your logged-in account.',
+        timestamp: new Date().toLocaleTimeString(),
+        ticketCards
+      }
+    ]);
+  };
+
+  const handleChatAction = async (response: Awaited<ReturnType<typeof sendChatMessage>>) => {
+    if (response.auth_result) {
+      await applyChatAuthResult(response.auth_result);
+    }
+
+    if (response.action?.type === 'show_my_tickets') {
+      await appendTicketCards();
+    }
+
+    if (response.action?.type === 'show_ticket_by_id') {
+      await appendTicketCards(response.action.bookingId);
+    }
+  };
 
   const sendMessage = async (displayText: string, apiText = displayText) => {
     if (!displayText.trim() || !sessionId) return;
@@ -977,7 +1173,7 @@ export default function BookingWithChatBot() {
     setSending(true);
 
     try {
-      const response = await sendChatMessage(apiText.trim(), sessionId, language);
+      const response = await sendChatMessage(apiText.trim(), sessionId, language, await getChatAuthContext());
       const isSearchMuseums = response.intent === 'search_museums';
       const museumOptions = isSearchMuseums
         ? extractMuseumOptions(response.response || '')
@@ -1005,6 +1201,8 @@ export default function BookingWithChatBot() {
       if (response.booking_data) {
         setBookingData((prev) => ({ ...prev, ...(response.booking_data as BookingData) }));
       }
+
+      await handleChatAction(response);
     } catch (error) {
       setMessages((m) => [
         ...m,
@@ -1062,8 +1260,9 @@ export default function BookingWithChatBot() {
     setSending(true);
 
     try {
+      const authContext = await getChatAuthContext();
       // Step 1: send total ticket count
-      let lastResponse = await sendChatMessage(String(total), sessionId, language);
+      let lastResponse = await sendChatMessage(String(total), sessionId, language, authContext);
       if (lastResponse.booking_data) {
         setBookingData((prev) => ({ ...prev, ...(lastResponse.booking_data as BookingData) }));
       }
@@ -1071,7 +1270,7 @@ export default function BookingWithChatBot() {
       // Step 2: send each visitor category
       for (const [type, count] of Object.entries(combo)) {
         if (count > 0) {
-          lastResponse = await sendChatMessage(`${count} ${type}`, sessionId, language);
+          lastResponse = await sendChatMessage(`${count} ${type}`, sessionId, language, authContext);
           if (lastResponse.booking_data) {
             setBookingData((prev) => ({ ...prev, ...(lastResponse.booking_data as BookingData) }));
           }
@@ -1087,6 +1286,8 @@ export default function BookingWithChatBot() {
           timestamp: new Date().toLocaleTimeString()
         }
       ]);
+
+      await handleChatAction(lastResponse);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -1140,32 +1341,7 @@ export default function BookingWithChatBot() {
     ]);
 
     try {
-      const token = await getCurrentIdToken();
-      const email = getStoredUserEmail() || getFirebaseClientAuth().currentUser?.email || '';
-
-      if (!token) {
-        throw new Error('Please login again to view your tickets.');
-      }
-
-      const result = await getMyTicketHistory(token, email);
-      const ticketCards = await Promise.all(
-        result.tickets.map(async (ticket) => ({
-          ...ticket,
-          qrDataUrl: await makeTicketQr(ticket.bookingId)
-        }))
-      );
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          from: 'bot',
-          text: ticketCards.length
-            ? `You have ${ticketCards.length} ticket${ticketCards.length === 1 ? '' : 's'}.`
-            : 'No tickets found for your logged-in account.',
-          timestamp: new Date().toLocaleTimeString(),
-          ticketCards
-        }
-      ]);
+      await appendTicketCards();
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -1187,7 +1363,7 @@ export default function BookingWithChatBot() {
       return;
     }
 
-    if (!name.trim() || !email.trim() || !phone.trim()) {
+    if (!contactDetails.name || !contactDetails.email || !contactDetails.phone) {
       setMessages((prev) => [
         ...prev,
         {
@@ -1201,31 +1377,48 @@ export default function BookingWithChatBot() {
 
     try {
       setConfirming(true);
+      const resolvedMuseum = await resolveBookingMuseumDetails(bookingData);
+      if (!resolvedMuseum.museumName || !resolvedMuseum.museumLocation) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            text: 'Please choose the museum before confirming. Type the museum name or a location, for example: book ticket in Kolkata.',
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
+        setBookingData((prev) => ({ ...prev, ...resolvedMuseum, ready_to_confirm: false }));
+        setConfirming(false);
+        return;
+      }
+
+      setBookingData((prev) => ({ ...prev, ...resolvedMuseum }));
+
       const totalAmount = Object.entries(bookingData.visitor_combo || {}).reduce((sum, [type, count]) => {
         const price = (type === 'Child' ? 100 : type === 'Senior Citizen' ? 150 : type === 'Student' ? 120 : type === 'Professor' || type === 'Researcher/Scientist' ? 180 : 200);
         return sum + price * count;
-      }, 0) || Number(bookingData.tickets || 1) * (bookingData.pricePerTicket || (bookingData as any).price || 200);
+      }, 0) || Number(bookingData.tickets || 1) * (resolvedMuseum.pricePerTicket || bookingData.pricePerTicket || (bookingData as any).price || 200);
 
       const bookingPayload = {
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
+        name: contactDetails.name,
+        email: contactDetails.email,
+        phone: contactDetails.phone,
         visitDate: bookingData.date!,
         timeSlot: toApiTimeSlot(bookingData.time_slot),
         numberOfTickets: Number(bookingData.tickets),
         visitorType: bookingData.visitor_type || 'Adult',
         visitorCombo: bookingData.visitor_combo || undefined,
-        museumName: bookingData.museumName || (bookingData as any).museum_name || undefined,
-        museumLocation: bookingData.museumLocation || (bookingData as any).museum_location || undefined,
-        museumCategory: bookingData.museumCategory || (bookingData as any).museum_category || undefined,
-        museumId: bookingData.museumId || (bookingData as any).museum_id || undefined,
+        museumName: resolvedMuseum.museumName,
+        museumLocation: resolvedMuseum.museumLocation,
+        museumCategory: resolvedMuseum.museumCategory,
+        museumId: resolvedMuseum.museumId,
         pricePerTicket: totalAmount / (Number(bookingData.tickets) || 1),
         totalPrice: totalAmount
       };
 
       const authToken = await getCurrentIdToken();
       const orderResponse = await createRazorpayOrder(bookingPayload, authToken);
-      const handleVerifiedBooking = async (verified: { booking: { bookingId: string } }) => {
+      const handleVerifiedBooking = async (verified: { booking: TicketHistoryItem | any }) => {
         const qrDataUrl = await makeTicketQr(verified.booking.bookingId);
 
         setMessages((prev) => [
@@ -1234,11 +1427,12 @@ export default function BookingWithChatBot() {
             from: 'bot',
             text: translate(language, 'chat.bookingConfirmed', {
               bookingId: verified.booking.bookingId,
-              email: email.trim()
+              email: contactDetails.email
             }),
             timestamp: new Date().toLocaleTimeString(),
             qrDataUrl,
-            qrBookingId: verified.booking.bookingId
+            qrBookingId: verified.booking.bookingId,
+            bookingCard: verified.booking
           }
         ]);
 
@@ -1288,9 +1482,9 @@ export default function BookingWithChatBot() {
         description: `${bookingPayload.museumName || 'Museum'} ticket booking`,
         order_id: orderResponse.order.id,
         prefill: {
-          name: name.trim(),
-          email: email.trim(),
-          contact: phone.trim()
+          name: contactDetails.name,
+          email: contactDetails.email,
+          contact: contactDetails.phone
         },
         notes: {
           museumName: bookingPayload.museumName || '',
@@ -1387,6 +1581,22 @@ export default function BookingWithChatBot() {
               </div>
               {m.qrDataUrl && m.qrBookingId && (
                 <div className="mt-2 inline-block rounded-lg border bg-white p-4 text-center">
+                  {m.bookingCard && (
+                    <div className="mb-3 text-left text-xs text-slate-800">
+                      <div className="font-semibold text-slate-950">{m.bookingCard.museumName || 'Museum ticket'}</div>
+                      <div className="text-slate-600">{m.bookingCard.museumLocation || 'Location not available'}</div>
+                      {m.bookingCard.museumCategory ? (
+                        <div className="text-slate-500">{m.bookingCard.museumCategory}</div>
+                      ) : null}
+                      <div className="mt-2 grid gap-1">
+                        <div><span className="font-medium">Booking ID:</span> {m.bookingCard.bookingId || m.qrBookingId}</div>
+                        <div><span className="font-medium">Date:</span> {formatTicketDate(m.bookingCard.visitDate)}</div>
+                        <div><span className="font-medium">Time:</span> {m.bookingCard.timeSlot || '-'}</div>
+                        <div><span className="font-medium">Tickets:</span> {m.bookingCard.numberOfTickets || '-'} x {m.bookingCard.visitorType || '-'}</div>
+                        <div><span className="font-medium">Amount:</span> INR {m.bookingCard.totalAmount || 0}</div>
+                      </div>
+                    </div>
+                  )}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={m.qrDataUrl}
@@ -1403,9 +1613,9 @@ export default function BookingWithChatBot() {
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                           <div className="font-mono text-sm font-semibold">{ticket.bookingId}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {ticket.museumName || 'Museum'}{ticket.museumLocation ? `, ${ticket.museumLocation}` : ''}
-                          </div>
+                          <div className="mt-1 text-sm font-medium">{ticket.museumName || 'Museum ticket'}</div>
+                          <div className="text-xs text-muted-foreground">{ticket.museumLocation || 'Location not available'}</div>
+                          {ticket.museumCategory ? <div className="text-xs text-muted-foreground">{ticket.museumCategory}</div> : null}
                         </div>
                         <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${ticket.expired ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
                           {ticket.expired ? 'Expired' : 'Active'}
@@ -1423,10 +1633,14 @@ export default function BookingWithChatBot() {
                           <div className="mt-1 text-[11px] font-medium text-slate-700">Gate QR</div>
                         </div>
                         <div className="space-y-1 text-xs">
+                          <div><span className="text-muted-foreground">Name:</span> {ticket.name || '-'}</div>
+                          <div><span className="text-muted-foreground">Email:</span> {ticket.email || '-'}</div>
                           <div><span className="text-muted-foreground">Date:</span> {formatTicketDate(ticket.visitDate)}</div>
                           <div><span className="text-muted-foreground">Time:</span> {ticket.timeSlot}</div>
                           <div><span className="text-muted-foreground">Tickets:</span> {ticket.numberOfTickets} x {ticket.visitorType}</div>
                           <div><span className="text-muted-foreground">Amount:</span> ₹{ticket.totalAmount}</div>
+                          <div><span className="text-muted-foreground">Booking status:</span> {ticket.status}</div>
+                          <div><span className="text-muted-foreground">Payment:</span> {ticket.paymentStatus || '-'}</div>
                           <div><span className="text-muted-foreground">Gate action:</span> {gateActionLabel(ticket.gateAction)}</div>
                           {ticket.latestScan ? (
                             <div className="rounded bg-muted p-2 text-[11px]">
@@ -1521,34 +1735,42 @@ export default function BookingWithChatBot() {
             </div>
           ))}
           {sending && <div className="text-xs text-muted-foreground">{translate(language, 'chat.typing')}</div>}
-          {canConfirm && (
+          {showConfirmForm && (
             <div className="mb-2 max-w-[85%] text-sm text-muted-foreground">
               <form onSubmit={confirmBooking} className="inline-block w-full rounded border bg-muted px-3 py-3 text-foreground">
                 <h5 className="mb-3 text-sm font-semibold">{translate(language, 'chat.confirmDetails')}</h5>
-                <div className="mb-2 grid gap-2 md:grid-cols-2">
+                {(missingContactFields.name || missingContactFields.email) && (
+                  <div className={contactGridClass}>
+                    {missingContactFields.name && (
+                      <input
+                        className="rounded border bg-background px-3 py-2 text-sm"
+                        placeholder={translate(language, 'booking.fullName')}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        disabled={confirming}
+                      />
+                    )}
+                    {missingContactFields.email && (
+                      <input
+                        className="rounded border bg-background px-3 py-2 text-sm"
+                        placeholder={translate(language, 'booking.email')}
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        disabled={confirming}
+                      />
+                    )}
+                  </div>
+                )}
+                {missingContactFields.phone && (
                   <input
-                    className="rounded border bg-background px-3 py-2 text-sm"
-                    placeholder={translate(language, 'booking.fullName')}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    className="mb-3 w-full rounded border bg-background px-3 py-2 text-sm"
+                    placeholder={translate(language, 'booking.phone')}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
                     disabled={confirming}
                   />
-                  <input
-                    className="rounded border bg-background px-3 py-2 text-sm"
-                    placeholder={translate(language, 'booking.email')}
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={confirming}
-                  />
-                </div>
-                <input
-                  className="mb-3 w-full rounded border bg-background px-3 py-2 text-sm"
-                  placeholder={translate(language, 'booking.phone')}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  disabled={confirming}
-                />
+                )}
 
                 <div className="mb-3 rounded bg-background p-2 text-xs" data-bmt-no-translate>
                   <div>{translate(language, 'booking.date')}: {bookingData.date}</div>

@@ -87,6 +87,17 @@ export function calculateBookingTotal(
       else if (representativeType === 'Professor') pricePerTicket = Math.round(base * 0.9);
       else if (representativeType === 'Researcher/Scientist') pricePerTicket = Math.round(base * 0.9);
     }
+    if (customPrices && typeof customPrices[representativeType] === 'number') {
+      pricePerTicket = customPrices[representativeType];
+    } else if (input.pricePerTicket && input.pricePerTicket > 0) {
+      const base = input.pricePerTicket;
+      if (representativeType === 'Adult') pricePerTicket = base;
+      else if (representativeType === 'Child') pricePerTicket = Math.round(base * 0.5);
+      else if (representativeType === 'Senior Citizen') pricePerTicket = Math.round(base * 0.75);
+      else if (representativeType === 'Student') pricePerTicket = Math.round(base * 0.6);
+      else if (representativeType === 'Professor') pricePerTicket = Math.round(base * 0.9);
+      else if (representativeType === 'Researcher/Scientist') pricePerTicket = Math.round(base * 0.9);
+    }
     return {
       pricePerTicket,
       totalAmount
@@ -135,6 +146,26 @@ function toRealtimeValue(value: unknown) {
   return value instanceof Date ? value.toISOString() : value ?? null;
 }
 
+function sanitizeVisitorCombo(combo: Record<string, number> | null | undefined): Record<string, number> | null {
+  if (!combo) return null;
+  const sanitized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(combo)) {
+    const safeKey = key.replace(/\//g, '-');
+    sanitized[safeKey] = value;
+  }
+  return sanitized;
+}
+
+function desanitizeVisitorCombo(combo: Record<string, number> | null | undefined): Record<string, number> | null {
+  if (!combo) return null;
+  const desanitized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(combo)) {
+    const originalKey = key.replace(/-/g, '/');
+    desanitized[originalKey] = value;
+  }
+  return desanitized;
+}
+
 async function mirrorBookingToRealtimeDatabase(booking: Record<string, unknown>) {
   const database = getFirebaseRealtimeDatabase();
   const bookingId = String(booking.bookingId || '');
@@ -145,7 +176,12 @@ async function mirrorBookingToRealtimeDatabase(booking: Record<string, unknown>)
   }
 
   const realtimePayload = Object.fromEntries(
-    Object.entries(booking).map(([key, value]) => [key, toRealtimeValue(value)])
+    Object.entries(booking).map(([key, value]) => {
+      if (key === 'visitorCombo') {
+        return [key, sanitizeVisitorCombo(value as any)];
+      }
+      return [key, toRealtimeValue(value)];
+    })
   );
 
   const updates: Record<string, unknown> = {
@@ -184,13 +220,111 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     status: String(data.status || 'confirmed') as BookingStatus,
     createdAt: toDateString(data.createdAt),
     updatedAt: toDateString(data.updatedAt),
-    visitorCombo: (data.visitorCombo as Record<string, number>) || null
+    visitorCombo: desanitizeVisitorCombo(data.visitorCombo as Record<string, number>) || null
   };
+}
+
+type BookingResponseData = ReturnType<typeof toBookingResponse>;
+
+function normalizeLookupValue(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function museumPriceCandidates(museum: Record<string, any>) {
+  const values = new Set<number>();
+  const basePrice = Number(museum.price || 0);
+  if (basePrice > 0) values.add(basePrice);
+
+  const prices = museum.prices && typeof museum.prices === 'object' ? museum.prices : {};
+  Object.values(prices).forEach((value) => {
+    const price = Number(value || 0);
+    if (price > 0) values.add(price);
+  });
+
+  return values;
+}
+
+async function loadMuseumRecordsForEnrichment() {
+  try {
+    const firestore = getFirebaseFirestore();
+    const snapshot = await firestore.collection('museums').get();
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Record<string, any>[];
+  } catch (error) {
+    console.error('Failed to load museums for booking enrichment:', error);
+    return [];
+  }
+}
+
+function findMuseumForBooking(booking: BookingResponseData, museums: Record<string, any>[]) {
+  const bookingMuseumId = normalizeLookupValue(booking.museumId);
+  const bookingMuseumName = normalizeLookupValue(booking.museumName);
+  const bookingPrice = Number(booking.pricePerTicket || (booking.numberOfTickets ? booking.totalAmount / booking.numberOfTickets : 0));
+
+  if (bookingMuseumId) {
+    const byId = museums.find((museum) => {
+      return [
+        museum.id,
+        museum.museum_id
+      ].some((value) => normalizeLookupValue(value) === bookingMuseumId);
+    });
+    if (byId) return byId;
+  }
+
+  if (bookingMuseumName) {
+    const byName = museums.find((museum) => normalizeLookupValue(museum.name) === bookingMuseumName);
+    if (byName) return byName;
+  }
+
+  if (bookingPrice > 0) {
+    const priceMatches = museums.filter((museum) => museumPriceCandidates(museum).has(bookingPrice));
+    if (priceMatches.length === 1) {
+      return priceMatches[0];
+    }
+  }
+
+  return null;
+}
+
+async function enrichBookingWithMuseumInfo<T extends BookingResponseData>(booking: T, museums?: Record<string, any>[]): Promise<T> {
+  if (booking.museumName && booking.museumLocation) {
+    return booking;
+  }
+
+  const museumRecords = museums || await loadMuseumRecordsForEnrichment();
+  const museum = findMuseumForBooking(booking, museumRecords);
+  if (!museum) {
+    return booking;
+  }
+
+  return {
+    ...booking,
+    museumId: booking.museumId || String(museum.museum_id || museum.id || ''),
+    museumName: booking.museumName || String(museum.name || ''),
+    museumLocation: booking.museumLocation || String(museum.location || ''),
+    museumCategory: booking.museumCategory || String(museum.category || '')
+  };
+}
+
+async function enrichBookingsWithMuseumInfo<T extends BookingResponseData>(bookings: T[]) {
+  const needsEnrichment = bookings.some((booking) => !booking.museumName || !booking.museumLocation);
+  if (!needsEnrichment) {
+    return bookings;
+  }
+
+  const museums = await loadMuseumRecordsForEnrichment();
+  return Promise.all(bookings.map((booking) => enrichBookingWithMuseumInfo(booking, museums)));
 }
 
 export async function createBooking(input: CreateBookingInput & MuseumInfo & Partial<BookingPaymentInfo> & { status?: BookingStatus }) {
   const firestore = getFirebaseFirestore();
   const database = getFirebaseRealtimeDatabase();
+
+  if (!String(input.museumName || '').trim() || !String(input.museumLocation || '').trim()) {
+    throw new ApiError('Please select a museum before booking. Museum name and location are required.', 400);
+  }
 
   // Fetch custom prices if booking a custom registered museum
   let customPrices: Record<string, number> | null = null;
@@ -227,7 +361,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     timeSlot: input.timeSlot,
     numberOfTickets: input.numberOfTickets,
     visitorType: input.visitorType,
-    visitorCombo: input.visitorCombo || null,
+    visitorCombo: sanitizeVisitorCombo(input.visitorCombo),
     museumId: input.museumId || null,
     museumName: input.museumName || null,
     museumLocation: input.museumLocation || null,
@@ -254,7 +388,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
 
   void logUserActivity(payload.userId, payload.email, 'Booking', 'booking_created', `Booking ${bookingId} created for ${payload.museumName || 'Bharat Museum'} on ${payload.visitDate} (${payload.timeSlot})`);
 
-  const booking = toBookingResponse(bookingId, payload);
+  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(bookingId, payload));
 
   // Send booking confirmation email asynchronously (non-blocking)
   sendBookingConfirmationEmail(booking).catch((err) => {
@@ -280,10 +414,12 @@ export async function getAllBookings() {
   // Sort descending
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  const bookings = await enrichBookingsWithMuseumInfo(list);
+
   return {
     success: true,
-    count: list.length,
-    bookings: list
+    count: bookings.length,
+    bookings
   };
 }
 
@@ -295,7 +431,7 @@ export async function getBookingById(id: string) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const booking = toBookingResponse(id, snapshot.val());
+  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(id, snapshot.val()));
 
   return {
     success: true,
@@ -311,7 +447,7 @@ export async function getBookingByBookingId(bookingId: string) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const booking = toBookingResponse(bookingId, snapshot.val());
+  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(bookingId, snapshot.val()));
 
   return {
     success: true,
@@ -331,14 +467,17 @@ export async function getBookingsForUser(userId: string) {
   // Sort descending
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  const bookings = await enrichBookingsWithMuseumInfo(list);
+
   return {
     success: true,
-    count: list.length,
-    bookings: list
+    count: bookings.length,
+    bookings
   };
 }
 
-function toTicketScanAction(message: string, outcome: string) {
+function toTicketScanAction(message: string, outcome: string, gateAction?: string) {
+  if (gateAction === 'entry' || gateAction === 'exit') return gateAction;
   const lower = message.toLowerCase();
   if (lower.includes('exit')) return 'exit';
   if (outcome === 'granted') return 'entry';
@@ -390,12 +529,15 @@ export async function getTicketHistoryForUser(input: { userId: string; email?: s
       deviceName: String(val?.deviceName || ''),
       scannedAt: toDateString(val?.scannedAt),
       outcome: String(val?.outcome || 'denied'),
+      gateAction: String(val?.gateAction || ''),
       message: String(val?.message || '')
     });
     scanLogsByTicket.set(ticketId, logs);
   });
 
-  const tickets = Array.from(bookingsById.values()).map((booking) => {
+  const enrichedBookings = await enrichBookingsWithMuseumInfo(Array.from(bookingsById.values()));
+
+  const tickets = enrichedBookings.map((booking) => {
     const scanLogs = (scanLogsByTicket.get(booking.bookingId) || [])
       .sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
     const latestScan = scanLogs[0] || null;
@@ -403,7 +545,7 @@ export async function getTicketHistoryForUser(input: { userId: string; email?: s
     return {
       ...booking,
       expired: isTicketExpired(booking.visitDate),
-      gateAction: latestScan ? toTicketScanAction(latestScan.message, latestScan.outcome) : 'not_scanned',
+      gateAction: latestScan ? toTicketScanAction(latestScan.message, latestScan.outcome, latestScan.gateAction) : 'not_scanned',
       latestScan,
       scanLogs
     };
@@ -443,7 +585,7 @@ export async function updateBookingStatus(id: string, status: 'pending' | 'confi
   await database.ref().update(updates);
 
   const updatedSnap = await bookingRef.once('value');
-  const booking = toBookingResponse(id, updatedSnap.val());
+  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(id, updatedSnap.val()));
   void logUserActivity(booking.userId, booking.email, 'Booking', 'booking_updated', `Booking status for ${booking.bookingId} updated to ${status}`);
 
   return {
@@ -495,7 +637,8 @@ export async function checkAvailability(input: { visitDate: string; timeSlot: st
     }
   });
 
-  const totalTickets = list.reduce((sum, booking) => sum + Number(booking.numberOfTickets), 0);
+  const bookings = await enrichBookingsWithMuseumInfo(list);
+  const totalTickets = bookings.reduce((sum, booking) => sum + Number(booking.numberOfTickets), 0);
   const maxCapacity = 100;
   const availableTickets = maxCapacity - totalTickets;
 

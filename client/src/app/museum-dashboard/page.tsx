@@ -47,6 +47,7 @@ type ScanLog = {
   deviceName: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
+  gateAction: 'entry' | 'exit';
   message: string;
 };
 
@@ -325,6 +326,7 @@ export default function MuseumDashboardPage() {
           deviceName: String(val.deviceName || ''),
           scannedAt: String(val.scannedAt || ''),
           outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
+          gateAction: String(val.gateAction || 'entry') as ScanLog['gateAction'],
           message: String(val.message || '')
         });
       });
@@ -473,6 +475,7 @@ export default function MuseumDashboardPage() {
         l.ticketId.toLowerCase().includes(needle) ||
         l.deviceName.toLowerCase().includes(needle) ||
         l.message.toLowerCase().includes(needle) ||
+        l.gateAction.toLowerCase().includes(needle) ||
         l.outcome.toLowerCase().includes(needle)
     );
   }, [scanLogs, searchQuery]);
@@ -1411,6 +1414,7 @@ export default function MuseumDashboardPage() {
                         <th className="pb-3 pr-3">Timestamp</th>
                         <th className="pb-3 pr-3">Ticket ID</th>
                         <th className="pb-3 pr-3">Verification Point</th>
+                        <th className="pb-3 pr-3">Gate</th>
                         <th className="pb-3 pr-3">Outcome</th>
                         <th className="pb-3 pr-3">Detailed Status Message</th>
                       </tr>
@@ -1418,13 +1422,13 @@ export default function MuseumDashboardPage() {
                     <tbody>
                       {loading ? (
                         <tr>
-                          <td colSpan={5} className="py-16 text-center text-muted-foreground">
+                          <td colSpan={6} className="py-16 text-center text-muted-foreground">
                             <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-500" />
                           </td>
                         </tr>
                       ) : filteredLogs.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="py-16 text-center text-muted-foreground">
+                          <td colSpan={6} className="py-16 text-center text-muted-foreground">
                             No validation logs recorded.
                           </td>
                         </tr>
@@ -1440,6 +1444,15 @@ export default function MuseumDashboardPage() {
                             <td className="py-3.5 pr-3">
                               <div className="text-sm font-medium">{log.deviceName}</div>
                               <div className="text-xs text-muted-foreground font-mono">{log.deviceId}</div>
+                            </td>
+                            <td className="py-3.5 pr-3">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                log.gateAction === 'entry'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
+                                  : 'bg-violet-100 text-violet-800 dark:bg-violet-950/30 dark:text-violet-300'
+                              }`}>
+                                {log.gateAction === 'entry' ? 'ENTRY' : 'EXIT'}
+                              </span>
                             </td>
                             <td className="py-3.5 pr-3">
                               <span

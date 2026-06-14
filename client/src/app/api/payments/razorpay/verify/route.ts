@@ -23,6 +23,14 @@ function getRazorpaySecret() {
   return keySecret || null;
 }
 
+function assertMuseumDetails(booking: Record<string, unknown>) {
+  const museumName = String(booking?.museumName || '').trim();
+  const museumLocation = String(booking?.museumLocation || '').trim();
+  if (!museumName || !museumLocation) {
+    throw new ApiError('Please select a museum before payment. Museum name and location are required.', 400);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -36,6 +44,7 @@ export async function POST(req: NextRequest) {
     if (!booking?.name || !booking?.email || !booking?.phone || !booking?.visitDate || !booking?.timeSlot) {
       throw new ApiError('Missing required booking fields', 400);
     }
+    assertMuseumDetails(booking);
 
     const visitorCombo = booking.visitorCombo as Record<string, number> | undefined;
 

@@ -26,6 +26,14 @@ function getBasicAuthHeader(keyId: string, keySecret: string) {
   return `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`;
 }
 
+function assertMuseumDetails(body: Record<string, unknown>) {
+  const museumName = String(body?.museumName || '').trim();
+  const museumLocation = String(body?.museumLocation || '').trim();
+  if (!museumName || !museumLocation) {
+    throw new ApiError('Please select a museum before payment. Museum name and location are required.', 400);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -34,6 +42,7 @@ export async function POST(req: NextRequest) {
     if (!body?.name || !body?.email || !body?.phone || !body?.visitDate || !body?.timeSlot) {
       throw new ApiError('Missing required booking fields', 400);
     }
+    assertMuseumDetails(body);
 
     const visitorCombo = body.visitorCombo as Record<string, number> | undefined;
 

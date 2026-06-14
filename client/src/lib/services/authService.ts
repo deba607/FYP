@@ -164,17 +164,20 @@ export async function signupUser(input: SignupInput) {
   void logUserActivity(userRef.id, user.email, 'Auth', 'signup', `User registered using credentials (name: ${user.name}, phone: ${user.phone})`);
 
   const token = createToken(userRef.id, user.email);
+  const firebaseCustomToken = await getFirebaseAuth().createCustomToken(userRef.id, { role: user.role });
 
   return {
     success: true,
     message: 'User registered successfully',
     token,
+    firebaseCustomToken,
     user: {
       id: userRef.id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      profileCompleted: user.profileCompleted
+      profileCompleted: user.profileCompleted,
+      role: user.role
     }
   };
 }
