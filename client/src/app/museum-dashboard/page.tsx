@@ -367,13 +367,18 @@ export default function MuseumDashboardPage() {
       setError('Device name cannot be blank.');
       return;
     }
+    const controllerMuseumId = currentMuseum?.museum_id || (!shouldRestrictToCurrentMuseum ? museums[0]?.museum_id : '');
+    if (!controllerMuseumId) {
+      setError('A museum profile is required before registering a controller gate.');
+      return;
+    }
 
     try {
       setSubmitting(true);
       const res = await fetch('/api/controllers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: deviceName, status: deviceStatus })
+        body: JSON.stringify({ name: deviceName, museumId: controllerMuseumId, status: deviceStatus })
       });
       const data = await res.json().catch(() => ({}));
 
@@ -437,14 +442,24 @@ export default function MuseumDashboardPage() {
     }
   };
 
+  const scopedControllers = useMemo(() => {
+    return shouldRestrictToCurrentMuseum
+      ? controllers.filter((controller) => controller.museumId === currentMuseum?.museum_id || controller.museumId === currentMuseum?.id)
+      : controllers;
+  }, [controllers, currentMuseum, shouldRestrictToCurrentMuseum]);
+
   // Metrics
   const metrics = useMemo(() => {
-    const totalDevices = controllers.length;
-    const activeDevices = controllers.filter((c) => c.status === 'active').length;
-    const maintenanceDevices = controllers.filter((c) => c.status === 'maintenance').length;
-    const totalScans = scanLogs.length;
-    const successfulScans = scanLogs.filter((l) => l.outcome === 'granted').length;
-    const failedScans = scanLogs.filter((l) => l.outcome === 'denied').length;
+    const allowedDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
+    const scopedScanLogs = shouldRestrictToCurrentMuseum
+      ? scanLogs.filter((log) => allowedDeviceIds.has(log.deviceId))
+      : scanLogs;
+    const totalDevices = scopedControllers.length;
+    const activeDevices = scopedControllers.filter((c) => c.status === 'active').length;
+    const maintenanceDevices = scopedControllers.filter((c) => c.status === 'maintenance').length;
+    const totalScans = scopedScanLogs.length;
+    const successfulScans = scopedScanLogs.filter((l) => l.outcome === 'granted').length;
+    const failedScans = scopedScanLogs.filter((l) => l.outcome === 'denied').length;
     const passRate = totalScans > 0 ? Math.round((successfulScans / totalScans) * 100) : 0;
 
     return {
@@ -456,21 +471,25 @@ export default function MuseumDashboardPage() {
       failedScans,
       passRate
     };
-  }, [controllers, scanLogs]);
+  }, [scanLogs, scopedControllers, shouldRestrictToCurrentMuseum]);
 
   // Filters
   const filteredControllers = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return controllers;
-    return controllers.filter((c) =>
+    if (!needle) return scopedControllers;
+    return scopedControllers.filter((c) =>
       c.name.toLowerCase().includes(needle) || c.id.toLowerCase().includes(needle)
     );
-  }, [controllers, searchQuery]);
+  }, [scopedControllers, searchQuery]);
 
   const filteredLogs = useMemo(() => {
+    const allowedDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
+    const baseLogs = shouldRestrictToCurrentMuseum
+      ? scanLogs.filter((log) => allowedDeviceIds.has(log.deviceId))
+      : scanLogs;
     const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return scanLogs;
-    return scanLogs.filter(
+    if (!needle) return baseLogs;
+    return baseLogs.filter(
       (l) =>
         l.ticketId.toLowerCase().includes(needle) ||
         l.deviceName.toLowerCase().includes(needle) ||
@@ -478,7 +497,7 @@ export default function MuseumDashboardPage() {
         l.gateAction.toLowerCase().includes(needle) ||
         l.outcome.toLowerCase().includes(needle)
     );
-  }, [scanLogs, searchQuery]);
+  }, [scanLogs, scopedControllers, searchQuery, shouldRestrictToCurrentMuseum]);
 
   const scopedBookings = useMemo(() => {
     if (!shouldRestrictToCurrentMuseum) {
@@ -682,15 +701,19 @@ export default function MuseumDashboardPage() {
       )
     );
 
+    const scopedScanLogs = shouldRestrictToCurrentMuseum
+      ? scanLogs.filter((log) => scopedControllers.some((controller) => controller.id === log.deviceId))
+      : scanLogs;
+
     switch (detailModal) {
       case 'controllers':
         return {
           title: 'Total Controllers',
-          subtitle: `${controllers.length} registered gate device${controllers.length !== 1 ? 's' : ''}`,
-          body: controllerList(controllers)
+          subtitle: `${scopedControllers.length} registered gate device${scopedControllers.length !== 1 ? 's' : ''}`,
+          body: controllerList(scopedControllers)
         };
       case 'activeDevices': {
-        const activeDevices = controllers.filter((device) => device.status === 'active');
+        const activeDevices = scopedControllers.filter((device) => device.status === 'active');
         return {
           title: 'Active Devices',
           subtitle: `${activeDevices.length} online controller${activeDevices.length !== 1 ? 's' : ''}`,
@@ -721,18 +744,18 @@ export default function MuseumDashboardPage() {
         return {
           title: 'Gate Scans Today',
           subtitle: `${metrics.successfulScans} approved | ${metrics.failedScans} rejected`,
-          body: scanList(scanLogs)
+          body: scanList(scopedScanLogs)
         };
       case 'approvalRate':
         return {
           title: 'Approval Rate',
           subtitle: `${metrics.passRate}% granted across ${metrics.totalScans} scan${metrics.totalScans !== 1 ? 's' : ''}`,
-          body: scanList(scanLogs)
+          body: scanList(scopedScanLogs)
         };
       default:
         return null;
     }
-  }, [bookingMetrics, controllers, detailModal, metrics, scanLogs, scopedBookings, visitorStats]);
+  }, [bookingMetrics, detailModal, metrics, scanLogs, scopedBookings, scopedControllers, shouldRestrictToCurrentMuseum, visitorStats]);
 
   if (!authChecked) {
     return (

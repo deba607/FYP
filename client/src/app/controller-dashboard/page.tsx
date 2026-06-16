@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from 'react';
+import type { FormEvent, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -70,6 +70,28 @@ type CameraSession = {
   error: string;
 } | null;
 
+function waitForVideoElement(videoRef: RefObject<HTMLVideoElement | null>) {
+  return new Promise<HTMLVideoElement | null>((resolve) => {
+    const startedAt = Date.now();
+
+    const check = () => {
+      if (videoRef.current) {
+        resolve(videoRef.current);
+        return;
+      }
+
+      if (Date.now() - startedAt > 1500) {
+        resolve(null);
+        return;
+      }
+
+      window.requestAnimationFrame(check);
+    };
+
+    check();
+  });
+}
+
 function formatDate(value: string) {
   if (!value) return '-';
   const date = new Date(value);
@@ -88,17 +110,17 @@ function gateLabel(action: GateAction) {
 function gateAccent(action: GateAction) {
   return action === 'entry'
     ? {
-        text: 'text-blue-300',
-        border: 'border-blue-500/30',
-        bg: 'bg-blue-500/10',
-        button: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
-      }
+      text: 'text-blue-300',
+      border: 'border-blue-500/30',
+      bg: 'bg-blue-500/10',
+      button: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+    }
     : {
-        text: 'text-violet-300',
-        border: 'border-violet-500/30',
-        bg: 'bg-violet-500/10',
-        button: 'bg-violet-600 hover:bg-violet-700 shadow-violet-600/20'
-      };
+      text: 'text-violet-300',
+      border: 'border-violet-500/30',
+      bg: 'bg-violet-500/10',
+      button: 'bg-violet-600 hover:bg-violet-700 shadow-violet-600/20'
+    };
 }
 
 function cameraErrorMessage(error: unknown) {
@@ -109,10 +131,18 @@ function cameraErrorMessage(error: unknown) {
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return 'No camera found on this device.';
   }
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return 'Camera scanning requires HTTPS or localhost. Open this page on localhost or a secure HTTPS address.';
+  }
   if (typeof navigator !== 'undefined' && !navigator.mediaDevices?.getUserMedia) {
     return 'This browser does not support camera scanning. Use manual ticket input.';
   }
   return 'Unable to start camera scanner. Use manual input or retry.';
+}
+
+function isExpectedQrDecodeMiss(error: unknown) {
+  const name = error && typeof error === 'object' && 'name' in error ? String((error as any).name) : '';
+  return name === 'NotFoundException' || name === 'ChecksumException' || name === 'FormatException';
 }
 
 export default function ControllerDashboardPage() {
@@ -361,8 +391,8 @@ export default function ControllerDashboardPage() {
     }
   };
 
-  const validateTicket = useCallback(async (gateAction: GateAction, ticketId: string, deviceId: string) => {
-    const cleanInput = ticketId.trim();
+  const validateTicket = useCallback(async (gateAction: GateAction, ticketId: unknown, deviceId: string) => {
+    const cleanInput = String(ticketId || '').trim();
     if (!cleanInput) return;
 
     setScanningAction(gateAction);
@@ -378,7 +408,9 @@ export default function ControllerDashboardPage() {
         body: JSON.stringify({
           ticketId: cleanInput,
           deviceId,
-          gateAction
+          gateAction,
+          operatorEmail: user?.email,
+          operatorRole: user?.role
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -428,7 +460,7 @@ export default function ControllerDashboardPage() {
     } finally {
       setScanningAction(null);
     }
-  }, [playSound]);
+  }, [playSound, user?.email, user?.role]);
 
   const startCamera = useCallback(async (gateAction: GateAction) => {
     const device = selectedDevices[gateAction];
@@ -438,6 +470,10 @@ export default function ControllerDashboardPage() {
     }
     if (device.status !== 'active') {
       setCameraSession({ gateAction, status: 'active', error: 'Selected gate is offline or under maintenance.' });
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setCameraSession({ gateAction, status: 'active', error: 'Camera scanning requires HTTPS or localhost. Open this page on localhost or a secure HTTPS address.' });
       return;
     }
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -450,7 +486,8 @@ export default function ControllerDashboardPage() {
     setCameraSession({ gateAction, status: 'starting', error: '' });
 
     window.setTimeout(async () => {
-      if (!videoRef.current) {
+      const videoElement = await waitForVideoElement(videoRef);
+      if (!videoElement) {
         setCameraSession({ gateAction, status: 'active', error: 'Camera preview could not be opened.' });
         return;
       }
@@ -459,11 +496,14 @@ export default function ControllerDashboardPage() {
       try {
         const reader = new BrowserQRCodeReader();
         let controls: { stop: () => void } | null = null;
-        controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-          const value = result?.getText().trim();
+        controls = await reader.decodeFromVideoDevice(undefined, videoElement, (result, error, scannerControls) => {
+          if (error && !isExpectedQrDecodeMiss(error)) {
+            console.error('QR scanner decode error:', error);
+          }
+          const value = String(result?.getText() || '').trim();
           if (!value || resolved) return;
           resolved = true;
-          controls?.stop();
+          scannerControls.stop();
           scannerControlsRef.current = null;
           setCameraSession(null);
           void validateTicket(gateAction, value, device.id);
@@ -471,6 +511,7 @@ export default function ControllerDashboardPage() {
         scannerControlsRef.current = controls;
         setCameraSession({ gateAction, status: 'active', error: '' });
       } catch (error) {
+        console.error('QR scanner start error:', error);
         scannerControlsRef.current = null;
         setCameraSession({ gateAction, status: 'active', error: cameraErrorMessage(error) });
       }
@@ -531,15 +572,14 @@ export default function ControllerDashboardPage() {
                   <button
                     key={st}
                     onClick={() => void handleDeviceStatusChange(device.id, st)}
-                    className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition-all ${
-                      device.status === st
+                    className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition-all ${device.status === st
                         ? st === 'active'
                           ? 'bg-emerald-600 text-white shadow-md'
                           : st === 'maintenance'
-                          ? 'bg-amber-600 text-white shadow-md'
-                          : 'bg-slate-600 text-white shadow-md'
+                            ? 'bg-amber-600 text-white shadow-md'
+                            : 'bg-slate-600 text-white shadow-md'
                         : 'text-slate-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     {st}
                   </button>
@@ -624,6 +664,9 @@ export default function ControllerDashboardPage() {
                       <p><span className="text-slate-500">Museum:</span> {result.bookingDetails.museumName || 'Bharat Museum'}</p>
                       <p><span className="text-slate-500">Tickets:</span> {result.bookingDetails.numberOfTickets} x {result.bookingDetails.visitorType}</p>
                       <p><span className="text-slate-500">Date:</span> {result.bookingDetails.visitDate} ({result.bookingDetails.timeSlot})</p>
+                      <p><span className="text-slate-500">Gender:</span> {result.bookingDetails.gender || '-'}</p>
+                      <p><span className="text-slate-500">Age:</span> {result.bookingDetails.age || '-'}</p>
+                      <p><span className="text-slate-500">Location:</span> {result.bookingDetails.userLocation || '-'}</p>
                     </div>
                   )}
                 </div>
@@ -662,7 +705,7 @@ export default function ControllerDashboardPage() {
         <div className="space-y-4 bg-slate-900/30 p-5">
           <button
             type="button"
-            disabled={disabled || isScanning}
+            disabled={isScanning}
             onClick={() => void startCamera(gateAction)}
             className={`flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-lg transition-all disabled:opacity-40 ${accent.button}`}
           >
@@ -751,11 +794,10 @@ export default function ControllerDashboardPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-all ${
-                  soundEnabled
+                className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-all ${soundEnabled
                     ? 'border-teal-500/30 bg-teal-500/10 text-teal-400'
                     : 'border-slate-700 bg-slate-800 text-slate-400'
-                }`}
+                  }`}
                 title={soundEnabled ? 'Disable alert buzzer' : 'Enable alert buzzer'}
               >
                 {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
@@ -800,31 +842,28 @@ export default function ControllerDashboardPage() {
                   visibleLogs.slice(0, 30).map((log) => (
                     <div
                       key={log.id}
-                      className={`rounded-lg border p-3 text-xs ${
-                        log.outcome === 'granted'
+                      className={`rounded-lg border p-3 text-xs ${log.outcome === 'granted'
                           ? 'border-green-500/10 bg-green-500/5'
                           : 'border-red-500/10 bg-red-500/5'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-semibold text-slate-200">{log.ticketId}</span>
                             <span
-                              className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
-                                log.gateAction === 'entry'
+                              className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${log.gateAction === 'entry'
                                   ? 'bg-blue-500/20 text-blue-300'
                                   : 'bg-violet-500/20 text-violet-300'
-                              }`}
+                                }`}
                             >
                               {log.gateAction}
                             </span>
                             <span
-                              className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
-                                log.outcome === 'granted'
+                              className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${log.outcome === 'granted'
                                   ? 'bg-green-500/20 text-green-400'
                                   : 'bg-red-500/20 text-red-400'
-                              }`}
+                                }`}
                             >
                               {log.outcome}
                             </span>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { getBookingByBookingId } from '../../lib/api';
+import { buildTicketQrPayload } from '../../lib/ticketQr';
 
 import { Search } from 'lucide-react';
 
@@ -16,12 +17,18 @@ type BookingLookupResult = {
   numberOfTickets: number;
   visitorType: string;
   totalAmount: number;
+  gender?: string | null;
+  age?: number | null;
+  userLocation?: string | null;
+  museumId?: string | null;
   museumName?: string | null;
   museumLocation?: string | null;
   museumCategory?: string | null;
+  pricePerTicket?: number;
   status: string;
   paymentStatus?: string;
   createdAt: string;
+  purchaseDateTime?: string;
 };
 
 export default function ShowTicket() {
@@ -39,10 +46,10 @@ export default function ShowTicket() {
       return;
     }
 
-    QRCode.toDataURL(result.bookingId, {
+    QRCode.toDataURL(buildTicketQrPayload(result), {
       errorCorrectionLevel: 'M',
       margin: 2,
-      width: 220,
+      width: 320,
       color: {
         dark: '#111827',
         light: '#ffffff'
@@ -58,7 +65,7 @@ export default function ShowTicket() {
     return () => {
       active = false;
     };
-  }, [result?.bookingId]);
+  }, [result]);
 
   const lookup = async () => {
     setError('');
@@ -84,12 +91,18 @@ export default function ShowTicket() {
         numberOfTickets: found.numberOfTickets,
         visitorType: found.visitorType,
         totalAmount: found.totalAmount,
+        gender: found.gender,
+        age: found.age,
+        userLocation: found.userLocation,
+        museumId: found.museumId,
         museumName: found.museumName,
         museumLocation: found.museumLocation,
         museumCategory: found.museumCategory,
+        pricePerTicket: found.pricePerTicket,
         status: found.status,
         paymentStatus: found.paymentStatus,
-        createdAt: found.createdAt
+        createdAt: found.createdAt,
+        purchaseDateTime: found.purchaseDateTime
       });
     } catch (err) {
       setError((err as Error).message || 'Unable to fetch booking.');
@@ -132,7 +145,7 @@ export default function ShowTicket() {
               <img
                 src={qrDataUrl}
                 alt={`QR code for booking ${result.bookingId}`}
-                className="mx-auto h-44 w-44"
+                className="mx-auto h-64 w-64"
               />
               <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
             </div>
@@ -152,6 +165,22 @@ export default function ShowTicket() {
               <div className="font-medium">{result.phone || '-'}</div>
             </div>
             <div>
+              <div className="text-sm text-muted-foreground">Gender</div>
+              <div className="font-medium">{result.gender || '-'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Age</div>
+              <div className="font-medium">{result.age || '-'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Visitor Location</div>
+              <div className="font-medium">{result.userLocation || '-'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Museum ID</div>
+              <div className="font-mono text-xs font-medium">{result.museumId || '-'}</div>
+            </div>
+            <div>
               <div className="text-sm text-muted-foreground">Date</div>
               <div className="font-medium">{new Date(result.visitDate).toLocaleDateString()}</div>
             </div>
@@ -162,6 +191,10 @@ export default function ShowTicket() {
             <div>
               <div className="text-sm text-muted-foreground">Tickets</div>
               <div className="font-medium">{result.numberOfTickets} x {result.visitorType}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Price</div>
+              <div className="font-medium">INR {result.pricePerTicket || 0}/ticket</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground">Amount</div>
@@ -179,6 +212,8 @@ export default function ShowTicket() {
 
           <div className="mt-4 text-sm text-muted-foreground">Created</div>
           <div className="text-xs">{new Date(result.createdAt).toLocaleString()}</div>
+          <div className="mt-2 text-sm text-muted-foreground">Purchase Date & Time</div>
+          <div className="text-xs">{result.purchaseDateTime ? new Date(result.purchaseDateTime).toLocaleString() : '-'}</div>
         </div>
       )}
     </div>

@@ -24,10 +24,16 @@ function getRazorpaySecret() {
 }
 
 function assertMuseumDetails(booking: Record<string, unknown>) {
+  const museumId = String(booking?.museumId || '').trim();
   const museumName = String(booking?.museumName || '').trim();
   const museumLocation = String(booking?.museumLocation || '').trim();
-  if (!museumName || !museumLocation) {
-    throw new ApiError('Please select a museum before payment. Museum name and location are required.', 400);
+  const museumCategory = String(booking?.museumCategory || '').trim();
+  const pricePerTicket = Number(booking?.pricePerTicket || 0);
+  if (!museumId || !museumName || !museumLocation || !museumCategory) {
+    throw new ApiError('Please select a museum before payment. Museum ID, name, location, and category are required.', 400);
+  }
+  if (!Number.isFinite(pricePerTicket) || pricePerTicket <= 0) {
+    throw new ApiError('Ticket price is required for the selected museum.', 400);
   }
 }
 

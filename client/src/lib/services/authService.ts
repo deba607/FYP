@@ -29,7 +29,7 @@ type StoredUser = {
   photoURL?: string;
   authProvider: 'password' | 'google';
   profileCompleted: boolean;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'museum' | 'controller';
   createdAt: Date;
   updatedAt: Date;
 };

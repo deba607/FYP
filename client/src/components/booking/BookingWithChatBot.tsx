@@ -11,6 +11,7 @@ import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
+import { buildTicketQrPayload, type TicketQrBooking } from '../../lib/ticketQr';
 
 type ChatMessage = {
   from: 'user' | 'bot';
@@ -908,11 +909,11 @@ function readBookingProfile(): BookingProfile {
   };
 }
 
-async function makeTicketQr(bookingId: string) {
-  return QRCode.toDataURL(bookingId, {
+async function makeTicketQr(booking: TicketQrBooking) {
+  return QRCode.toDataURL(buildTicketQrPayload(booking), {
     errorCorrectionLevel: 'M',
     margin: 2,
-    width: 220,
+    width: 320,
     color: {
       dark: '#111827',
       light: '#ffffff'
@@ -1121,7 +1122,7 @@ export default function BookingWithChatBot() {
     return Promise.all(
       tickets.map(async (ticket) => ({
         ...ticket,
-        qrDataUrl: await makeTicketQr(ticket.bookingId)
+        qrDataUrl: await makeTicketQr(ticket)
       }))
     );
   };
@@ -1419,7 +1420,7 @@ export default function BookingWithChatBot() {
       const authToken = await getCurrentIdToken();
       const orderResponse = await createRazorpayOrder(bookingPayload, authToken);
       const handleVerifiedBooking = async (verified: { booking: TicketHistoryItem | any }) => {
-        const qrDataUrl = await makeTicketQr(verified.booking.bookingId);
+        const qrDataUrl = await makeTicketQr(verified.booking);
 
         setMessages((prev) => [
           ...prev,
@@ -1590,10 +1591,16 @@ export default function BookingWithChatBot() {
                       ) : null}
                       <div className="mt-2 grid gap-1">
                         <div><span className="font-medium">Booking ID:</span> {m.bookingCard.bookingId || m.qrBookingId}</div>
+                        <div><span className="font-medium">Museum ID:</span> {m.bookingCard.museumId || '-'}</div>
+                        <div><span className="font-medium">Purchase:</span> {formatDateTime(m.bookingCard.purchaseDateTime || m.bookingCard.createdAt)}</div>
                         <div><span className="font-medium">Date:</span> {formatTicketDate(m.bookingCard.visitDate)}</div>
                         <div><span className="font-medium">Time:</span> {m.bookingCard.timeSlot || '-'}</div>
                         <div><span className="font-medium">Tickets:</span> {m.bookingCard.numberOfTickets || '-'} x {m.bookingCard.visitorType || '-'}</div>
+                        <div><span className="font-medium">Price:</span> INR {m.bookingCard.pricePerTicket || 0}/ticket</div>
                         <div><span className="font-medium">Amount:</span> INR {m.bookingCard.totalAmount || 0}</div>
+                        <div><span className="font-medium">Gender:</span> {m.bookingCard.gender || '-'}</div>
+                        <div><span className="font-medium">Age:</span> {m.bookingCard.age || '-'}</div>
+                        <div><span className="font-medium">Visitor Location:</span> {m.bookingCard.userLocation || '-'}</div>
                       </div>
                     </div>
                   )}
@@ -1601,7 +1608,7 @@ export default function BookingWithChatBot() {
                   <img
                     src={m.qrDataUrl}
                     alt={`QR code for booking ${m.qrBookingId}`}
-                    className="mx-auto h-40 w-40"
+                    className="mx-auto h-56 w-56"
                   />
                   <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
                 </div>
@@ -1628,16 +1635,23 @@ export default function BookingWithChatBot() {
                           <img
                             src={ticket.qrDataUrl}
                             alt={`QR code for booking ${ticket.bookingId}`}
-                            className="mx-auto h-32 w-32"
+                            className="mx-auto h-48 w-48"
                           />
                           <div className="mt-1 text-[11px] font-medium text-slate-700">Gate QR</div>
                         </div>
                         <div className="space-y-1 text-xs">
                           <div><span className="text-muted-foreground">Name:</span> {ticket.name || '-'}</div>
                           <div><span className="text-muted-foreground">Email:</span> {ticket.email || '-'}</div>
+                          <div><span className="text-muted-foreground">Phone:</span> {ticket.phone || '-'}</div>
+                          <div><span className="text-muted-foreground">Gender:</span> {ticket.gender || '-'}</div>
+                          <div><span className="text-muted-foreground">Age:</span> {ticket.age || '-'}</div>
+                          <div><span className="text-muted-foreground">Visitor location:</span> {ticket.userLocation || '-'}</div>
+                          <div><span className="text-muted-foreground">Museum ID:</span> {ticket.museumId || '-'}</div>
+                          <div><span className="text-muted-foreground">Purchase:</span> {formatDateTime(ticket.purchaseDateTime || ticket.createdAt)}</div>
                           <div><span className="text-muted-foreground">Date:</span> {formatTicketDate(ticket.visitDate)}</div>
                           <div><span className="text-muted-foreground">Time:</span> {ticket.timeSlot}</div>
                           <div><span className="text-muted-foreground">Tickets:</span> {ticket.numberOfTickets} x {ticket.visitorType}</div>
+                          <div><span className="text-muted-foreground">Price:</span> INR {ticket.pricePerTicket || 0}/ticket</div>
                           <div><span className="text-muted-foreground">Amount:</span> ₹{ticket.totalAmount}</div>
                           <div><span className="text-muted-foreground">Booking status:</span> {ticket.status}</div>
                           <div><span className="text-muted-foreground">Payment:</span> {ticket.paymentStatus || '-'}</div>

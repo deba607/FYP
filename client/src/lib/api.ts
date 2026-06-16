@@ -29,6 +29,9 @@ export type CreateBookingInput = {
   name: string;
   email: string;
   phone: string;
+  gender?: string;
+  age?: number;
+  userLocation?: string;
   visitDate: string;
   timeSlot: string;
   numberOfTickets: number;
@@ -49,6 +52,9 @@ export type BookingResponse = {
   name: string;
   email: string;
   phone: string;
+  gender?: string | null;
+  age?: number | null;
+  userLocation?: string | null;
   visitDate: string;
   timeSlot: string;
   numberOfTickets: number;
@@ -65,6 +71,8 @@ export type BookingResponse = {
   razorpayPaymentId?: string | null;
   status: string;
   createdAt: string;
+  purchaseDateTime?: string;
+  visitorCombo?: Record<string, number> | null;
 };
 
 export type TicketScanLog = {

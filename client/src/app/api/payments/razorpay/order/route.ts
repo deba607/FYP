@@ -27,10 +27,16 @@ function getBasicAuthHeader(keyId: string, keySecret: string) {
 }
 
 function assertMuseumDetails(body: Record<string, unknown>) {
+  const museumId = String(body?.museumId || '').trim();
   const museumName = String(body?.museumName || '').trim();
   const museumLocation = String(body?.museumLocation || '').trim();
-  if (!museumName || !museumLocation) {
-    throw new ApiError('Please select a museum before payment. Museum name and location are required.', 400);
+  const museumCategory = String(body?.museumCategory || '').trim();
+  const pricePerTicket = Number(body?.pricePerTicket || 0);
+  if (!museumId || !museumName || !museumLocation || !museumCategory) {
+    throw new ApiError('Please select a museum before payment. Museum ID, name, location, and category are required.', 400);
+  }
+  if (!Number.isFinite(pricePerTicket) || pricePerTicket <= 0) {
+    throw new ApiError('Ticket price is required for the selected museum.', 400);
   }
 }
 

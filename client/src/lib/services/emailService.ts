@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
+import { buildTicketQrPayload } from '../ticketQr';
 
 export type BookingInfo = {
   bookingId: string;
@@ -14,8 +15,16 @@ export type BookingInfo = {
   museumName?: string | null;
   museumLocation?: string | null;
   museumCategory?: string | null;
+  museumId?: string | null;
   pricePerTicket?: number;
   visitorCombo?: Record<string, number> | null;
+  gender?: string | null;
+  age?: number | null;
+  userLocation?: string | null;
+  paymentStatus?: string;
+  status?: string;
+  createdAt?: string;
+  purchaseDateTime?: string;
 };
 
 const TICKET_PRICES = {
@@ -91,10 +100,10 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
     const museumName = booking.museumName || 'Bharat Museum';
     const museumLocation = booking.museumLocation || '';
     const museumDisplay = museumLocation ? `${museumName} (${museumLocation})` : museumName;
-    const qrDataUrl = await QRCode.toDataURL(booking.bookingId, {
+    const qrDataUrl = await QRCode.toDataURL(buildTicketQrPayload(booking), {
       errorCorrectionLevel: 'M',
       margin: 2,
-      width: 220,
+      width: 320,
       color: {
         dark: '#0f172a',
         light: '#ffffff'
@@ -211,8 +220,8 @@ export async function sendBookingConfirmationEmail(booking: BookingInfo) {
       border: 1px solid #334155;
     }
     .qr-block img {
-      width: 180px;
-      height: 180px;
+      width: 260px;
+      height: 260px;
       display: block;
       margin: 0 auto;
     }

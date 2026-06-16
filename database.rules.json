@@ -20,7 +20,8 @@
     },
     "scan_logs": {
       ".read": "true",
-      ".write": "true"
+      ".write": "true",
+      ".indexOn": ["ticketId"]
     }
   }
 }

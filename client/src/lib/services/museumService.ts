@@ -50,6 +50,55 @@ function slugify(text: string): string {
     .replace(/--+/g, '_');
 }
 
+async function findUserByEmail(email: string) {
+  const firestore = getFirebaseFirestore();
+  return firestore
+    .collection('users')
+    .where('email', '==', email.trim().toLowerCase())
+    .limit(1)
+    .get();
+}
+
+async function upsertMuseumLoginUser(input: {
+  email: string;
+  password: string;
+  museumName: string;
+  now: Date;
+}) {
+  const firestore = getFirebaseFirestore();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const hashedPassword = await bcrypt.hash(input.password, 10);
+  const userSnapshot = await findUserByEmail(normalizedEmail);
+
+  if (!userSnapshot.empty) {
+    const userRef = userSnapshot.docs[0].ref;
+    await userRef.update({
+      name: input.museumName.trim() + ' Admin',
+      email: normalizedEmail,
+      password: hashedPassword,
+      authProvider: 'password',
+      profileCompleted: true,
+      role: 'museum',
+      updatedAt: input.now
+    });
+    return userRef.id;
+  }
+
+  const userRef = firestore.collection('users').doc();
+  await userRef.set({
+    name: input.museumName.trim() + ' Admin',
+    email: normalizedEmail,
+    password: hashedPassword,
+    phone: '',
+    authProvider: 'password',
+    profileCompleted: true,
+    role: 'museum',
+    createdAt: input.now,
+    updatedAt: input.now
+  });
+  return userRef.id;
+}
+
 export async function registerMuseum(input: {
   name: string;
   location: string;
@@ -84,11 +133,7 @@ export async function registerMuseum(input: {
   let normalizedEmail = '';
   if (input.loginEmail && input.loginEmail.trim()) {
     normalizedEmail = input.loginEmail.trim().toLowerCase();
-    const existingUserSnapshot = await firestore
-      .collection('users')
-      .where('email', '==', normalizedEmail)
-      .limit(1)
-      .get();
+    const existingUserSnapshot = await findUserByEmail(normalizedEmail);
 
     if (!existingUserSnapshot.empty) {
       throw new ApiError('User account with this email/user ID already exists', 400);
@@ -128,20 +173,12 @@ export async function registerMuseum(input: {
 
   // If credentials are provided, create the museum authority user account
   if (normalizedEmail && input.loginPassword) {
-    const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
-    const userRef = firestore.collection('users').doc();
-    const userPayload = {
-      name: input.name.trim() + " Admin",
+    await upsertMuseumLoginUser({
       email: normalizedEmail,
-      password: hashedPassword,
-      phone: '',
-      authProvider: 'password',
-      profileCompleted: true,
-      role: 'museum',
-      createdAt: now,
-      updatedAt: now
-    };
-    await userRef.set(userPayload);
+      password: input.loginPassword,
+      museumName: input.name,
+      now
+    });
   }
 
   return {
@@ -197,11 +234,7 @@ export async function updateMuseum(id: string, input: {
 
   // Handle Login Email changes/validations
   if (newLoginEmail && newLoginEmail !== oldLoginEmail) {
-    const existingUserSnapshot = await firestore
-      .collection('users')
-      .where('email', '==', newLoginEmail)
-      .limit(1)
-      .get();
+    const existingUserSnapshot = await findUserByEmail(newLoginEmail);
 
     if (!existingUserSnapshot.empty) {
       throw new ApiError('User account with this email/user ID already exists', 400);
@@ -209,11 +242,7 @@ export async function updateMuseum(id: string, input: {
 
     // Update login email in the user account document
     if (oldLoginEmail) {
-      const userSnapshot = await firestore
-        .collection('users')
-        .where('email', '==', oldLoginEmail)
-        .limit(1)
-        .get();
+      const userSnapshot = await findUserByEmail(oldLoginEmail);
 
       if (!userSnapshot.empty) {
         const userRef = userSnapshot.docs[0].ref;
@@ -228,20 +257,12 @@ export async function updateMuseum(id: string, input: {
       if (!input.loginPassword || input.loginPassword.length < 8) {
         throw new ApiError('Password of at least 8 characters is required to register the login account', 400);
       }
-      const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
-      const userRef = firestore.collection('users').doc();
-      const userPayload = {
-        name: input.name.trim() + " Admin",
+      await upsertMuseumLoginUser({
         email: newLoginEmail,
-        password: hashedPassword,
-        phone: '',
-        authProvider: 'password',
-        profileCompleted: true,
-        role: 'museum',
-        createdAt: now,
-        updatedAt: now
-      };
-      await userRef.set(userPayload);
+        password: input.loginPassword,
+        museumName: input.name,
+        now
+      });
     }
   }
 
@@ -253,20 +274,12 @@ export async function updateMuseum(id: string, input: {
 
     const targetEmail = newLoginEmail || oldLoginEmail;
     if (targetEmail) {
-      const userSnapshot = await firestore
-        .collection('users')
-        .where('email', '==', targetEmail)
-        .limit(1)
-        .get();
-
-      if (!userSnapshot.empty) {
-        const hashedPassword = await bcrypt.hash(input.loginPassword, 10);
-        const userRef = userSnapshot.docs[0].ref;
-        await userRef.update({
-          password: hashedPassword,
-          updatedAt: now
-        });
-      }
+      await upsertMuseumLoginUser({
+        email: targetEmail,
+        password: input.loginPassword,
+        museumName: input.name,
+        now
+      });
     }
   }
 

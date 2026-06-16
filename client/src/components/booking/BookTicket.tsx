@@ -13,6 +13,7 @@ import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin, Plus, Minus 
 import Listbox from '../ui/listbox';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
+import { buildTicketQrPayload } from '../../lib/ticketQr';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
 type MuseumOption = {
@@ -91,11 +92,11 @@ function loadRazorpayScript() {
   });
 }
 
-async function makeTicketQr(bookingId: string) {
-  return QRCode.toDataURL(bookingId, {
+async function makeTicketQr(booking: BookingResponse) {
+  return QRCode.toDataURL(buildTicketQrPayload(booking), {
     errorCorrectionLevel: 'M',
     margin: 2,
-    width: 220,
+    width: 320,
     color: {
       dark: '#111827',
       light: '#ffffff'
@@ -113,9 +114,15 @@ function BookTicket() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState('Male');
+  const [age, setAge] = useState('');
+  const [userLocation, setUserLocation] = useState('');
   const [touchedFullName, setTouchedFullName] = useState(false);
   const [touchedEmail, setTouchedEmail] = useState(false);
   const [touchedPhone, setTouchedPhone] = useState(false);
+  const [touchedGender, setTouchedGender] = useState(false);
+  const [touchedAge, setTouchedAge] = useState(false);
+  const [touchedUserLocation, setTouchedUserLocation] = useState(false);
   const [touchedDate, setTouchedDate] = useState(false);
   const [touchedTickets, setTouchedTickets] = useState(false);
   const [museums, setMuseums] = useState<MuseumOption[]>([]);
@@ -241,6 +248,9 @@ function BookTicket() {
     if (!fullName.trim()) e.push('Full name is required.');
     if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) e.push('A valid email is required.');
     if (!phone.trim()) e.push('Phone number is required.');
+    if (!gender) e.push('Gender selection is required.');
+    if (!age || Number(age) <= 0 || Number.isNaN(Number(age))) e.push('A valid age is required.');
+    if (!userLocation.trim()) e.push('Your location is required.');
     if (!date) e.push('Please select a date.');
     else {
       const d = new Date(date + 'T00:00:00');
@@ -258,6 +268,9 @@ function BookTicket() {
   const fullNameInvalid = !fullName.trim();
   const emailInvalid = !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
   const phoneInvalid = !phone.trim();
+  const genderInvalid = !gender;
+  const ageInvalid = !age || Number(age) <= 0 || Number.isNaN(Number(age));
+  const userLocationInvalid = !userLocation.trim();
   const dateInvalid = (() => {
     if (!date) return true;
     const d = new Date(date + 'T00:00:00');
@@ -280,6 +293,9 @@ function BookTicket() {
         name: fullName,
         email,
         phone,
+        gender,
+        age: Number(age),
+        userLocation,
         visitDate: date,
         timeSlot: time,
         numberOfTickets: tickets,
@@ -307,8 +323,8 @@ function BookTicket() {
 
         setSuccess({
           id: verified.booking.bookingId,
-          summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} â€” â‚¹${verified.booking.totalAmount} (demo payment)`,
-          qrDataUrl: await makeTicketQr(verified.booking.bookingId),
+          summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount} (demo payment)`,
+          qrDataUrl: await makeTicketQr(verified.booking),
           booking: verified.booking
         });
 
@@ -385,7 +401,7 @@ function BookTicket() {
             setSuccess({
               id: verified.booking.bookingId,
               summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || museum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`,
-              qrDataUrl: await makeTicketQr(verified.booking.bookingId),
+              qrDataUrl: await makeTicketQr(verified.booking),
               booking: verified.booking
             });
 
@@ -476,15 +492,21 @@ function BookTicket() {
             ) : null}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <div><span className="text-slate-500">Booking ID:</span> <span className="font-mono font-semibold">{success.booking.bookingId}</span></div>
+              <div><span className="text-slate-500">Museum ID:</span> <span className="font-mono">{success.booking.museumId || '-'}</span></div>
               <div><span className="text-slate-500">Name:</span> {success.booking.name}</div>
               <div><span className="text-slate-500">Email:</span> {success.booking.email}</div>
               <div><span className="text-slate-500">Phone:</span> {success.booking.phone || '-'}</div>
+              <div><span className="text-slate-500">Purchase:</span> {success.booking.purchaseDateTime ? new Date(success.booking.purchaseDateTime).toLocaleString() : '-'}</div>
               <div><span className="text-slate-500">Date:</span> {new Date(success.booking.visitDate).toLocaleDateString()}</div>
               <div><span className="text-slate-500">Time:</span> {success.booking.timeSlot}</div>
               <div><span className="text-slate-500">Tickets:</span> {success.booking.numberOfTickets} x {success.booking.visitorType}</div>
+              <div><span className="text-slate-500">Price:</span> INR {success.booking.pricePerTicket || 0}/ticket</div>
               <div><span className="text-slate-500">Amount:</span> INR {success.booking.totalAmount}</div>
               <div><span className="text-slate-500">Status:</span> {success.booking.status}</div>
               <div><span className="text-slate-500">Payment:</span> {success.booking.paymentStatus || '-'}</div>
+              <div><span className="text-slate-500">Gender:</span> {success.booking.gender || '-'}</div>
+              <div><span className="text-slate-500">Age:</span> {success.booking.age || '-'}</div>
+              <div><span className="text-slate-500">Visitor Location:</span> {success.booking.userLocation || '-'}</div>
             </div>
           </div>
           <div className="mt-4 rounded-lg border border-green-200 bg-white p-4 text-center">
@@ -492,44 +514,15 @@ function BookTicket() {
             <img
               src={success.qrDataUrl}
               alt={`QR code for booking ${success.id}`}
-              className="mx-auto h-44 w-44"
+              className="mx-auto h-64 w-64"
             />
             <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
           </div>
         </div>
-      ) : null}
-
-      <form onSubmit={handleSubmit} className="grid gap-4">
-        <div>
-          <Label>{translate(language, 'booking.fullName')}</Label>
-          <div className="relative">
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><User className="h-4 w-4" /></div>
-            <Input aria-invalid={fullNameInvalid} onBlur={() => setTouchedFullName(true)} className="pl-10" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
-          {touchedFullName && fullNameInvalid && <div className="mt-1 text-xs text-red-600">Full name is required.</div>}
-          </div>
-        </div>
-
-        <div>
-          <Label>{translate(language, 'booking.email')}</Label>
-          <div className="relative">
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Mail className="h-4 w-4" /></div>
-            <Input aria-invalid={emailInvalid} onBlur={() => setTouchedEmail(true)} className="pl-10" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" type="email" />
-          {touchedEmail && emailInvalid && <div className="mt-1 text-xs text-red-600">Please enter a valid email address.</div>}
-          </div>
-        </div>
-
-        <div>
-          <Label>{translate(language, 'booking.phone')}</Label>
-          <div className="relative">
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Phone className="h-4 w-4" /></div>
-            <Input aria-invalid={phoneInvalid} onBlur={() => setTouchedPhone(true)} className="pl-10" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" type="tel" />
-          {touchedPhone && phoneInvalid && <div className="mt-1 text-xs text-red-600">Please provide a phone number.</div>}
-          </div>
-        </div>
-
-        <div>
-          <Label>{translate(language, 'booking.chooseMuseum')}</Label>
-          <div className="relative">
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label>{translate(language, 'booking.chooseMuseum')}</Label>
             <div className="mt-1">
               <div className="relative">
                 <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
@@ -604,169 +597,216 @@ function BookTicket() {
               </div>
             )}
           </div>
-        </div>
 
-        <div data-bmt-no-translate>
-          <Label>{translate(language, 'booking.visitorCategory')}</Label>
-          <div
-            className="mt-1 w-full rounded-lg border bg-[#1a1a2e] p-4 text-[#e0e0e0] shadow-md border-[#2a2a3e]"
-            style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
-          >
-            {/* Header */}
-            <div className="mb-3 flex items-center gap-2 border-b pb-2 border-[#2a2a3e]">
-              <Users className="h-4 w-4 text-blue-400" />
-              <span className="text-sm font-semibold text-white">Select Visitors</span>
-              <span className="ml-auto text-xs text-[#8888aa]">
-                {tickets}/{MAX_TICKETS} tickets
-              </span>
+          {/* Visitor Info (Gender, Age, Location) */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="gender">Gender</Label>
+              <select
+                id="gender"
+                value={gender}
+                onBlur={() => setTouchedGender(true)}
+                onChange={(e) => setGender(e.target.value)}
+                className="mt-1 block h-10 w-full rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm ring-offset-background focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+              {touchedGender && genderInvalid && <div className="mt-1 text-xs text-red-600">Gender selection is required.</div>}
             </div>
-
-            {/* Category rows */}
-            <div className="grid gap-3">
-              {visitorCategories.map((cat) => {
-                const count = visitorCombo[cat.name] || 0;
-                const canAdd = tickets < MAX_TICKETS;
-                return (
-                  <div
-                    key={cat.name}
-                    className="flex items-center justify-between border-b pb-2 last:border-b-0 last:pb-0 border-[#1e1e35]"
-                  >
-                    {/* Label + price */}
-                    <div className="flex-1">
-                      <div className={cn("text-sm transition-colors", count > 0 ? "text-white font-medium" : "text-[#8888aa]")}>
-                        {cat.emoji} {cat.name}
-                      </div>
-                      <div className="text-xs text-[#666688]">₹{cat.price}/ticket</div>
-                    </div>
-
-                    {/* +/- controls */}
-                    <div className="flex items-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setVisitorCombo((prev) => {
-                            const curr = prev[cat.name] || 0;
-                            if (curr <= 0) return prev;
-                            const next = { ...prev, [cat.name]: curr - 1 };
-                            if (next[cat.name] === 0) delete next[cat.name];
-                            return next;
-                          });
-                        }}
-                        disabled={loading || count === 0}
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: count > 0 ? '#2a2a4e' : '#1e1e35',
-                          border: '1px solid #3a3a5e',
-                          borderRadius: '6px 0 0 6px',
-                          color: count > 0 ? '#ff6b6b' : '#444',
-                          cursor: count > 0 && !loading ? 'pointer' : 'default',
-                          fontSize: '16px',
-                          fontWeight: 700,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <div
-                        style={{
-                          width: '36px',
-                          height: '32px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: '#16162a',
-                          borderTop: '1px solid #3a3a5e',
-                          borderBottom: '1px solid #3a3a5e',
-                          fontSize: '14px',
-                          fontWeight: 600,
-                          color: count > 0 ? '#ffffff' : '#555',
-                        }}
-                      >
-                        {count}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (tickets >= MAX_TICKETS) return;
-                          setVisitorCombo((prev) => ({ ...prev, [cat.name]: (prev[cat.name] || 0) + 1 }));
-                        }}
-                        disabled={loading || !canAdd}
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: canAdd ? '#2a2a4e' : '#1e1e35',
-                          border: '1px solid #3a3a5e',
-                          borderRadius: '0 6px 6px 0',
-                          color: canAdd ? '#60a5fa' : '#444',
-                          cursor: canAdd && !loading ? 'pointer' : 'default',
-                          fontSize: '16px',
-                          fontWeight: 700,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+            <div>
+              <Label htmlFor="age">Age</Label>
+              <Input
+                id="age"
+                type="number"
+                min="1"
+                max="120"
+                value={age}
+                onBlur={() => setTouchedAge(true)}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="Enter age"
+                className="mt-1"
+              />
+              {touchedAge && ageInvalid && <div className="mt-1 text-xs text-red-600">A valid age is required.</div>}
+            </div>
+            <div>
+              <Label htmlFor="userLocation">Hometown / Location</Label>
+              <Input
+                id="userLocation"
+                type="text"
+                value={userLocation}
+                onBlur={() => setTouchedUserLocation(true)}
+                onChange={(e) => setUserLocation(e.target.value)}
+                placeholder="Enter location"
+                className="mt-1"
+              />
+              {touchedUserLocation && userLocationInvalid && <div className="mt-1 text-xs text-red-600">Your location is required.</div>}
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>{translate(language, 'booking.date')}</Label>
-            <div className="relative">
-              <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Calendar className="h-4 w-4" /></div>
-              <Input aria-invalid={dateInvalid} onBlur={() => setTouchedDate(true)} className="pl-10" value={date} onChange={(e) => setDate(e.target.value)} type="date" min={new Date().toISOString().split('T')[0]} />
-              {touchedDate && dateInvalid && <div className="mt-1 text-xs text-red-600">Please select a valid date (today or later).</div>}
-            </div>
-          </div>
-          <div>
-            <Label>{translate(language, 'booking.time')}</Label>
-            <div className="relative">
-              <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Clock className="h-4 w-4" /></div>
-              <div className="mt-1">
-                <Listbox
-                  items={TIME_SLOTS.map((t) => ({ value: t, label: t }))}
-                  value={time}
-                  onChange={(v) => setTime(v)}
-                />
+          <div data-bmt-no-translate>
+            <Label>{translate(language, 'booking.visitorCategory')}</Label>
+            <div
+              className="mt-1 w-full rounded-lg border bg-[#1a1a2e] p-4 text-[#e0e0e0] shadow-md border-[#2a2a3e]"
+              style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+            >
+              {/* Header */}
+              <div className="mb-3 flex items-center gap-2 border-b pb-2 border-[#2a2a3e]">
+                <Users className="h-4 w-4 text-blue-400" />
+                <span className="text-sm font-semibold text-white">Select Visitors</span>
+                <span className="ml-auto text-xs text-[#8888aa]">
+                  {tickets}/{MAX_TICKETS} tickets
+                </span>
+              </div>
+
+              {/* Category rows */}
+              <div className="grid gap-3">
+                {visitorCategories.map((cat) => {
+                  const count = visitorCombo[cat.name] || 0;
+                  const canAdd = tickets < MAX_TICKETS;
+                  return (
+                    <div
+                      key={cat.name}
+                      className="flex items-center justify-between border-b pb-2 last:border-b-0 last:pb-0 border-[#1e1e35]"
+                    >
+                      {/* Label + price */}
+                      <div className="flex-1">
+                        <div className={cn("text-sm transition-colors", count > 0 ? "text-white font-medium" : "text-[#8888aa]")}>
+                          {cat.emoji} {cat.name}
+                        </div>
+                        <div className="text-xs text-[#666688]">₹{cat.price}/ticket</div>
+                      </div>
+
+                      {/* +/- controls */}
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVisitorCombo((prev) => {
+                              const curr = prev[cat.name] || 0;
+                              if (curr <= 0) return prev;
+                              const next = { ...prev, [cat.name]: curr - 1 };
+                              if (next[cat.name] === 0) delete next[cat.name];
+                              return next;
+                            });
+                          }}
+                          disabled={loading || count === 0}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: count > 0 ? '#2a2a4e' : '#1e1e35',
+                            border: '1px solid #3a3a5e',
+                            borderRadius: '6px 0 0 6px',
+                            color: count > 0 ? '#ff6b6b' : '#444',
+                            cursor: count > 0 && !loading ? 'pointer' : 'default',
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: '#16162a',
+                            borderTop: '1px solid #3a3a5e',
+                            borderBottom: '1px solid #3a3a5e',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: count > 0 ? '#ffffff' : '#555',
+                          }}
+                        >
+                          {count}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (tickets >= MAX_TICKETS) return;
+                            setVisitorCombo((prev) => ({ ...prev, [cat.name]: (prev[cat.name] || 0) + 1 }));
+                          }}
+                          disabled={loading || !canAdd}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: canAdd ? '#2a2a4e' : '#1e1e35',
+                            border: '1px solid #3a3a5e',
+                            borderRadius: '0 6px 6px 0',
+                            color: canAdd ? '#60a5fa' : '#444',
+                            cursor: canAdd && !loading ? 'pointer' : 'default',
+                            fontSize: '16px',
+                            fontWeight: 700,
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center justify-end pt-2">
-          <div className="text-right">
-            <div className="text-sm text-muted-foreground">{translate(language, 'booking.total')}</div>
-            <div className="text-xl font-semibold">₹{total}</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>{translate(language, 'booking.date')}</Label>
+              <div className="relative">
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Calendar className="h-4 w-4" /></div>
+                <Input aria-invalid={dateInvalid} onBlur={() => setTouchedDate(true)} className="pl-10" value={date} onChange={(e) => setDate(e.target.value)} type="date" min={new Date().toISOString().split('T')[0]} />
+                {touchedDate && dateInvalid && <div className="mt-1 text-xs text-red-600">Please select a valid date (today or later).</div>}
+              </div>
+            </div>
+            <div>
+              <Label>{translate(language, 'booking.time')}</Label>
+              <div className="relative">
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Clock className="h-4 w-4" /></div>
+                <div className="mt-1">
+                  <Listbox
+                    items={TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                    value={time}
+                    onChange={(v) => setTime(v)}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-2 flex justify-end">
-          <button
-            type="submit"
-            className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2 w-full sm:w-auto')}
-            disabled={loading || tickets === 0}
-          >
-            {loading 
-              ? translate(language, 'booking.openingPayment') 
-              : tickets === 0 
-                ? 'Select at least 1 visitor' 
-                : translate(language, 'booking.pay')
-            }
-          </button>
-        </div>
-      </form>
+          <div className="flex items-center justify-end pt-2">
+            <div className="text-right">
+              <div className="text-sm text-muted-foreground">{translate(language, 'booking.total')}</div>
+              <div className="text-xl font-semibold">₹{total}</div>
+            </div>
+          </div>
+
+          <div className="mt-2 flex justify-end">
+            <button
+              type="submit"
+              className={cn(buttonVariants({ variant: 'default' }), 'px-6 py-2 w-full sm:w-auto')}
+              disabled={loading || tickets === 0}
+            >
+              {loading 
+                ? translate(language, 'booking.openingPayment') 
+                : tickets === 0 
+                  ? 'Select at least 1 visitor' 
+                  : translate(language, 'booking.pay')
+              }
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

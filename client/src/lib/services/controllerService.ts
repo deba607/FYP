@@ -34,9 +34,12 @@ function toDateString(value: unknown): string {
   return new Date().toISOString();
 }
 
-export async function registerController(name: string, museumId: string = 'default-museum', status: 'active' | 'offline' | 'maintenance' = 'active') {
+export async function registerController(name: string, museumId: string, status: 'active' | 'offline' | 'maintenance' = 'active') {
   if (!name || !name.trim()) {
     throw new ApiError('Device name is required', 400);
+  }
+  if (!museumId || !museumId.trim()) {
+    throw new ApiError('Museum ID is required to register a controller device', 400);
   }
 
   const database = getFirebaseRealtimeDatabase();
@@ -63,6 +66,29 @@ export async function registerController(name: string, museumId: string = 'defau
     success: true,
     message: 'Controller registered successfully',
     controller: payload
+  };
+}
+
+export async function getControllerById(id: string) {
+  if (!id || !id.trim() || id === 'unknown') {
+    throw new ApiError('Controller device ID is required', 400);
+  }
+
+  const database = getFirebaseRealtimeDatabase();
+  const snapshot = await database.ref(`controllers/${id}`).once('value');
+
+  if (!snapshot.exists()) {
+    throw new ApiError('Controller device not found', 404);
+  }
+
+  const val = snapshot.val();
+  return {
+    id: String(val.id || id),
+    name: String(val.name || ''),
+    museumId: String(val.museumId || ''),
+    status: String(val.status || 'offline') as ControllerDevice['status'],
+    lastActive: toDateString(val.lastActive),
+    createdAt: toDateString(val.createdAt)
   };
 }
 

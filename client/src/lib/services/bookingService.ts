@@ -20,6 +20,9 @@ export type CreateBookingInput = {
   name: string;
   email: string;
   phone: string;
+  gender?: string;
+  age?: number;
+  userLocation?: string;
   visitDate: string;
   timeSlot: 'Morning (9 AM-12 PM)' | 'Afternoon (12 PM-3 PM)' | 'Evening (3 PM-6 PM)';
   numberOfTickets: number;
@@ -203,6 +206,9 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     name: String(data.name || ''),
     email: String(data.email || ''),
     phone: String(data.phone || ''),
+    gender: data.gender ? String(data.gender) : null,
+    age: data.age ? Number(data.age) : null,
+    userLocation: data.userLocation ? String(data.userLocation) : null,
     visitDate: String(data.visitDate || ''),
     timeSlot: String(data.timeSlot || ''),
     numberOfTickets: Number(data.numberOfTickets || 0),
@@ -219,6 +225,7 @@ function toBookingResponse(id: string, data: Record<string, unknown>) {
     razorpayPaymentId: data.razorpayPaymentId ? String(data.razorpayPaymentId) : null,
     status: String(data.status || 'confirmed') as BookingStatus,
     createdAt: toDateString(data.createdAt),
+    purchaseDateTime: toDateString(data.purchaseDateTime || data.createdAt),
     updatedAt: toDateString(data.updatedAt),
     visitorCombo: desanitizeVisitorCombo(data.visitorCombo as Record<string, number>) || null
   };
@@ -322,8 +329,12 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
   const firestore = getFirebaseFirestore();
   const database = getFirebaseRealtimeDatabase();
 
-  if (!String(input.museumName || '').trim() || !String(input.museumLocation || '').trim()) {
-    throw new ApiError('Please select a museum before booking. Museum name and location are required.', 400);
+  if (!String(input.museumId || '').trim() || !String(input.museumName || '').trim() || !String(input.museumLocation || '').trim() || !String(input.museumCategory || '').trim()) {
+    throw new ApiError('Please select a museum before booking. Museum ID, name, location, and category are required.', 400);
+  }
+
+  if (typeof input.pricePerTicket !== 'number' || !Number.isFinite(input.pricePerTicket) || input.pricePerTicket <= 0) {
+    throw new ApiError('Ticket price is required for the selected museum.', 400);
   }
 
   // Fetch custom prices if booking a custom registered museum
@@ -344,8 +355,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     }
   }
 
-  // Determine price per ticket: prefer museum-specific price if provided,
-  // otherwise fall back to visitor-type pricing.
+  // Determine price per ticket
   const { pricePerTicket, totalAmount } = calculateBookingTotal(input, customPrices);
 
   const bookingId = generateBookingId();
@@ -357,6 +367,9 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     name: input.name,
     email: input.email,
     phone: input.phone,
+    gender: input.gender || null,
+    age: input.age ? Number(input.age) : null,
+    userLocation: input.userLocation || null,
     visitDate: input.visitDate,
     timeSlot: input.timeSlot,
     numberOfTickets: input.numberOfTickets,
@@ -375,6 +388,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     razorpaySignature: input.razorpaySignature || null,
     status: input.status || 'confirmed' as BookingStatus,
     createdAt: now.toISOString(),
+    purchaseDateTime: now.toISOString(),
     updatedAt: now.toISOString()
   };
 
