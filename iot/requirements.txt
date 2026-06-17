@@ -1,7 +1,0 @@
-opencv-python>=4.8.0
-pyzbar>=0.1.9
-requests>=2.31.0
-paho-mqtt>=2.0.0
-python-dotenv>=1.0.0
-gpiozero>=2.0
-RPi.GPIO>=0.7.1
