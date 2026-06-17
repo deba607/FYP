@@ -6,13 +6,14 @@ type ApiErrorShape = {
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = String(init?.method || 'GET').toUpperCase();
   const response = await fetch(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers || {})
     },
-    cache: 'no-store'
+    cache: init?.cache ?? (method === 'GET' ? 'default' : 'no-store')
   });
 
   const data = await response.json().catch(() => ({}));
@@ -80,6 +81,7 @@ export type TicketScanLog = {
   ticketId: string;
   deviceId: string;
   deviceName: string;
+  museumId?: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
   gateAction?: 'entry' | 'exit';

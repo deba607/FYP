@@ -418,7 +418,7 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
 
 export async function getAllBookings() {
   const database = getFirebaseRealtimeDatabase();
-  const snapshot = await database.ref('bookings').once('value');
+  const snapshot = await database.ref('bookings').orderByChild('createdAt').limitToLast(1000).once('value');
 
   const list: any[] = [];
   snapshot.forEach((child) => {
@@ -437,7 +437,7 @@ export async function getAllBookings() {
   };
 }
 
-export async function getBookingById(id: string) {
+export async function getBookingById(id: string, options?: { enrich?: boolean }) {
   const database = getFirebaseRealtimeDatabase();
   const snapshot = await database.ref(`bookings/${id}`).once('value');
 
@@ -445,7 +445,8 @@ export async function getBookingById(id: string) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(id, snapshot.val()));
+  const response = toBookingResponse(id, snapshot.val());
+  const booking = options?.enrich === false ? response : await enrichBookingWithMuseumInfo(response);
 
   return {
     success: true,
@@ -453,7 +454,7 @@ export async function getBookingById(id: string) {
   };
 }
 
-export async function getBookingByBookingId(bookingId: string) {
+export async function getBookingByBookingId(bookingId: string, options?: { enrich?: boolean }) {
   const database = getFirebaseRealtimeDatabase();
   const snapshot = await database.ref(`bookings/${bookingId}`).once('value');
 
@@ -461,7 +462,8 @@ export async function getBookingByBookingId(bookingId: string) {
     throw new ApiError('Booking not found', 404);
   }
 
-  const booking = await enrichBookingWithMuseumInfo(toBookingResponse(bookingId, snapshot.val()));
+  const response = toBookingResponse(bookingId, snapshot.val());
+  const booking = options?.enrich === false ? response : await enrichBookingWithMuseumInfo(response);
 
   return {
     success: true,
@@ -518,36 +520,35 @@ export async function getTicketHistoryForUser(input: { userId: string; email?: s
   }
 
   if (normalizedEmail) {
-    const allSnapshot = await database.ref('bookings').once('value');
-    allSnapshot.forEach((child) => {
-      const val = child.val();
-      if (String(val?.email || '').trim().toLowerCase() === normalizedEmail) {
-        const booking = toBookingResponse(child.key || '', val);
-        bookingsById.set(booking.bookingId, booking);
-      }
+    const emailSnapshot = await database.ref('bookings').orderByChild('email').equalTo(normalizedEmail).once('value');
+    emailSnapshot.forEach((child) => {
+      const booking = toBookingResponse(child.key || '', child.val());
+      bookingsById.set(booking.bookingId, booking);
     });
   }
 
   const scanLogsByTicket = new Map<string, any[]>();
-  const scanSnapshot = await database.ref('scan_logs').once('value');
-  scanSnapshot.forEach((child) => {
-    const val = child.val();
-    const ticketId = String(val?.ticketId || '').trim();
-    if (!ticketId) return;
-
-    const logs = scanLogsByTicket.get(ticketId) || [];
-    logs.push({
-      id: child.key || '',
-      ticketId,
-      deviceId: String(val?.deviceId || ''),
-      deviceName: String(val?.deviceName || ''),
-      scannedAt: toDateString(val?.scannedAt),
-      outcome: String(val?.outcome || 'denied'),
-      gateAction: String(val?.gateAction || ''),
-      message: String(val?.message || '')
-    });
-    scanLogsByTicket.set(ticketId, logs);
-  });
+  await Promise.all(
+    Array.from(bookingsById.keys()).map(async (ticketId) => {
+      const scanSnapshot = await database.ref('scan_logs').orderByChild('ticketId').equalTo(ticketId).once('value');
+      scanSnapshot.forEach((child) => {
+        const val = child.val();
+        const logs = scanLogsByTicket.get(ticketId) || [];
+        logs.push({
+          id: child.key || '',
+          ticketId,
+          deviceId: String(val?.deviceId || ''),
+          deviceName: String(val?.deviceName || ''),
+          museumId: String(val?.museumId || ''),
+          scannedAt: toDateString(val?.scannedAt),
+          outcome: String(val?.outcome || 'denied'),
+          gateAction: String(val?.gateAction || ''),
+          message: String(val?.message || '')
+        });
+        scanLogsByTicket.set(ticketId, logs);
+      });
+    })
+  );
 
   const enrichedBookings = await enrichBookingsWithMuseumInfo(Array.from(bookingsById.values()));
 

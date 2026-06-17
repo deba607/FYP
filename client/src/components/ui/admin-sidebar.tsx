@@ -45,6 +45,13 @@ export const AdminSidebar = memo(() => {
   const { theme, setTheme } = useTheme();
   const [activeHash, setActiveHash] = useState('#dashboard');
 
+  const changeSection = (href: string) => {
+    setActiveHash(href);
+    if (typeof window === 'undefined') return;
+    window.history.replaceState(null, '', href);
+    window.dispatchEvent(new Event('hashchange'));
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleHashChange = () => {
@@ -60,8 +67,8 @@ export const AdminSidebar = memo(() => {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <a href="#dashboard">
+            <SidebarMenuButton size="lg" onClick={() => changeSection('#dashboard')}>
+              <>
                 <div className="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
@@ -69,7 +76,7 @@ export const AdminSidebar = memo(() => {
                   <span className="truncate font-semibold">Bharat Museum</span>
                   <span className="truncate text-xs">Admin Dashboard</span>
                 </div>
-              </a>
+              </>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -85,18 +92,13 @@ export const AdminSidebar = memo(() => {
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
-                      asChild
                       isActive={item.href === activeHash}
-                      onClick={() => {
-                        if (typeof window !== 'undefined') {
-                          window.location.hash = item.href;
-                        }
-                      }}
+                      onClick={() => changeSection(item.href)}
                     >
-                      <a href={item.href}>
+                      <>
                         <Icon />
                         <span>{item.title}</span>
-                      </a>
+                      </>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

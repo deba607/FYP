@@ -840,7 +840,7 @@ async function resolveBookingMuseumDetails(data: BookingData): Promise<Partial<B
   }
 
   try {
-    const response = await fetch('/api/museums', { cache: 'no-store' });
+    const response = await fetch('/api/museums');
     const payload = await response.json().catch(() => ({}));
     const museums = Array.isArray(payload?.museums) ? payload.museums as MuseumApiItem[] : [];
     const wantedId = normalizeMuseumText(current.museumId);

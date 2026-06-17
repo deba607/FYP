@@ -1,7 +1,16 @@
-import React, { isValidElement, cloneElement } from 'react';
+"use client";
+
+import React, { isValidElement, cloneElement, useEffect, useState } from 'react';
 import { cn } from '../../lib/utils';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Ticket, MessageCircle, Eye } from 'lucide-react';
+
+const bookingCards = [
+	{ to: '/booking/new', title: 'Ticket Booking', desc: 'Purchase tickets for your visit.', icon: <Ticket /> },
+	{ to: '/booking/chat', title: 'Ticket Booking With ChatBot', desc: 'Book tickets with the help of our chatbot.', icon: <MessageCircle />, badge: 'New' },
+	{ to: '/booking/show', title: 'Show Ticket', desc: 'Lookup and view your existing booking by ID.', icon: <Eye /> }
+] as const;
 
 const Card = ({
 	to,
@@ -9,16 +18,26 @@ const Card = ({
 	desc,
 	icon,
 	badge,
+	isOpening,
+	onOpen,
+	onWarmup,
 }: {
 	to: string;
 	title: string;
 	desc: string;
 	icon: React.ReactNode;
 	badge?: string;
+	isOpening: boolean;
+	onOpen: () => void;
+	onWarmup: () => void;
 }) => (
 	<Link
 		href={to as any}
 		aria-label={title}
+		prefetch
+		onMouseEnter={onWarmup}
+		onFocus={onWarmup}
+		onClick={onOpen}
 		className="group relative block h-full rounded-lg border bg-background p-6 transition-transform transform-gpu hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary"
 	>
 		{badge && (
@@ -37,18 +56,35 @@ const Card = ({
 		</div>
 
 		<p className="text-sm text-muted-foreground">{desc}</p>
-		<div className="mt-4 text-sm font-medium text-primary group-hover:underline">Open</div>
+		<div className="mt-4 text-sm font-medium text-primary group-hover:underline">
+			{isOpening ? 'Opening...' : 'Open'}
+		</div>
 	</Link>
 );
 
 export default function BookingBlock() {
+	const router = useRouter();
+	const [openingRoute, setOpeningRoute] = useState('');
+
+	useEffect(() => {
+		bookingCards.forEach((card) => {
+			router.prefetch(card.to as any);
+		});
+	}, [router]);
+
 	return (
 		<div className="max-w-4xl justify-center text-center mx-auto py-12 px-4 sm:px-6 lg:px-8 gap-5">
 			{/* <h3 className="mb-6 text-2xl font-semibold">Tickets</h3> */}
 			<div className="grid gap-6 sm:grid-cols-3 sm:gap-8 md:gap-12 lg:gap-16 items-stretch">
-				<Card to="/booking/new" title="Ticket Booking" desc="Purchase tickets for your visit." icon={<Ticket />} />
-				<Card to="/booking/chat" title="Ticket Booking With ChatBot" desc="Book tickets with the help of our chatbot." icon={<MessageCircle />} badge="New" />
-				<Card to="/booking/show" title="Show Ticket" desc="Lookup and view your existing booking by ID." icon={<Eye />} />
+				{bookingCards.map((card) => (
+					<Card
+						key={card.to}
+						{...card}
+						isOpening={openingRoute === card.to}
+						onWarmup={() => router.prefetch(card.to as any)}
+						onOpen={() => setOpeningRoute(card.to)}
+					/>
+				))}
 			</div>
 		</div>
 	);

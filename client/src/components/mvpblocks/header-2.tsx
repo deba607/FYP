@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, easeInOut } from 'framer-motion';
 import { Menu, X, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 import { LanguageSelector } from '../ui/language-selector';
@@ -46,6 +46,7 @@ const navItems: NavItem[] = [
 
 export default function Header2() {
   const pathname = usePathname();
+  const router = useRouter();
   const { language } = useLanguage();
   const isDenseLanguage = language === 'ta';
   const [isScrolled, setIsScrolled] = useState(false);
@@ -54,6 +55,7 @@ export default function Header2() {
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
   const [roleChecked, setRoleChecked] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [dashboardSwitchingTo, setDashboardSwitchingTo] = useState('');
 
 
   useEffect(() => {
@@ -180,7 +182,7 @@ export default function Header2() {
       localStorage.removeItem('museum_auth_user');
       localStorage.removeItem('museum_auth_token');
       setSignedInUser(null);
-      window.location.href = '/login';
+      router.push('/login');
     }
   };
 
@@ -189,7 +191,10 @@ export default function Header2() {
     signedInUser?.email?.trim()?.charAt(0)?.toUpperCase() ||
     'U';
   const visibleNavItems = navItems;
-  const dashboardLinks = roleChecked ? getDashboardLinksForRole(signedInUser?.role) : [];
+  const dashboardLinks = useMemo(
+    () => roleChecked ? getDashboardLinksForRole(signedInUser?.role) : [],
+    [roleChecked, signedInUser?.role]
+  );
   const isAdmin = dashboardLinks.some((item) => item.href === '/admin');
   const isMuseum = dashboardLinks.some((item) => item.href === '/museum-dashboard');
   const isController = dashboardLinks.some((item) => item.href === '/controller-dashboard');
@@ -204,6 +209,16 @@ export default function Header2() {
   const currentDashboard = dashboardLinks.some((item) => item.href === matchedDashboard)
     ? matchedDashboard
     : '';
+
+  useEffect(() => {
+    dashboardLinks.forEach((item) => {
+      router.prefetch(item.href as any);
+    });
+  }, [dashboardLinks, router]);
+
+  useEffect(() => {
+    setDashboardSwitchingTo('');
+  }, [pathname]);
 
   const containerVariants = {
     hidden: { opacity: 0, y: -20 },
@@ -333,13 +348,16 @@ export default function Header2() {
                 <div className="relative">
                   <select
                     aria-label="Dashboard Redirect Select"
-                    value={currentDashboard}
+                    value={dashboardSwitchingTo || currentDashboard}
+                    disabled={Boolean(dashboardSwitchingTo)}
                     onChange={(e) => {
                       if (e.target.value) {
-                        window.location.href = e.target.value;
+                        setDashboardSwitchingTo(e.target.value);
+                        router.prefetch(e.target.value as any);
+                        router.push(e.target.value as any);
                       }
                     }}
-                    className="border-border bg-background/90 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-3 py-2 text-sm font-semibold cursor-pointer outline-hidden focus:ring-2 focus:ring-emerald-500/20"
+                    className="border-border bg-background/90 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-3 py-2 text-sm font-semibold cursor-pointer outline-hidden focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-wait disabled:opacity-70"
                   >
                     {!currentDashboard && <option value="" disabled className="text-muted-foreground">Select Dashboard</option>}
                     {dashboardLinks.map((item) => (

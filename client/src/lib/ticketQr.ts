@@ -24,37 +24,7 @@ export type TicketQrBooking = {
 };
 
 export function buildTicketQrPayload(booking: TicketQrBooking) {
-  return JSON.stringify({
-    t: 'bmt',
-    v: 1,
-    b: booking.bookingId,
-    u: {
-      n: booking.name || '',
-      e: booking.email || '',
-      p: booking.phone || '',
-      g: booking.gender || '',
-      a: booking.age ?? null,
-      l: booking.userLocation || ''
-    },
-    m: {
-      i: booking.museumId || '',
-      n: booking.museumName || '',
-      l: booking.museumLocation || '',
-      c: booking.museumCategory || ''
-    },
-    k: {
-      d: booking.visitDate || '',
-      s: booking.timeSlot || '',
-      q: Number(booking.numberOfTickets || 0),
-      vt: booking.visitorType || '',
-      vc: booking.visitorCombo || null,
-      pp: Number(booking.pricePerTicket || 0),
-      ta: Number(booking.totalAmount || 0),
-      ps: booking.paymentStatus || '',
-      st: booking.status || '',
-      pd: booking.purchaseDateTime || booking.createdAt || ''
-    }
-  });
+  return `BMT:${booking.bookingId}`;
 }
 
 export function extractBookingIdFromQrValue(value: string) {
@@ -73,6 +43,10 @@ export function extractBookingIdFromQrValue(value: string) {
     if (found) return String(found).trim();
   } catch {
     // Old QR codes contain the booking ID directly.
+  }
+
+  if (trimmed.toUpperCase().startsWith('BMT:')) {
+    return trimmed.slice(4).trim();
   }
 
   return trimmed;

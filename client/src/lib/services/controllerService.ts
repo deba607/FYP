@@ -15,6 +15,7 @@ export type ScanLog = {
   ticketId: string;
   deviceId: string;
   deviceName: string;
+  museumId: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
   gateAction: 'entry' | 'exit';
@@ -171,7 +172,8 @@ export async function logScan(
   deviceId: string,
   outcome: 'granted' | 'denied',
   message: string,
-  gateAction: 'entry' | 'exit' = 'entry'
+  gateAction: 'entry' | 'exit' = 'entry',
+  device?: Pick<ControllerDevice, 'name' | 'museumId'>
 ) {
   const database = getFirebaseRealtimeDatabase();
   const scanRef = database.ref('scan_logs').push();
@@ -183,18 +185,19 @@ export async function logScan(
   }
 
   // Retrieve device name for cached display
-  let deviceName = 'Unknown Device';
-  if (deviceId !== 'unknown' && deviceId) {
+  let deviceName = device?.name || 'Unknown Device';
+  let museumId = device?.museumId || '';
+  if (!device && deviceId !== 'unknown' && deviceId) {
     try {
       const devRef = database.ref(`controllers/${deviceId}`);
       const devDoc = await devRef.once('value');
       if (devDoc.exists()) {
-        deviceName = String(devDoc.val()?.name || 'Unknown Device');
-        // also touch the device's lastActive status
-        await devRef.update({ lastActive: now.toISOString() });
+        const device = devDoc.val();
+        deviceName = String(device?.name || 'Unknown Device');
+        museumId = String(device?.museumId || '');
       }
     } catch (err) {
-      console.error('Failed to update device activity on scan:', err);
+      console.error('Failed to read device details on scan:', err);
     }
   }
 
@@ -202,13 +205,21 @@ export async function logScan(
     ticketId: ticketId.trim(),
     deviceId,
     deviceName,
+    museumId,
     scannedAt: now.toISOString(),
     outcome,
     gateAction,
     message: message.trim()
   };
 
-  await scanRef.set(payload);
+  const updates: Record<string, unknown> = {
+    [`scan_logs/${id}`]: payload
+  };
+  if (deviceId !== 'unknown' && deviceId) {
+    updates[`controllers/${deviceId}/lastActive`] = now.toISOString();
+  }
+
+  await database.ref().update(updates);
 
   return {
     success: true,
@@ -222,7 +233,9 @@ export async function logScan(
 
 export async function getScanLogs(deviceId?: string) {
   const database = getFirebaseRealtimeDatabase();
-  const snapshot = await database.ref('scan_logs').once('value');
+  const snapshot = deviceId
+    ? await database.ref('scan_logs').orderByChild('deviceId').equalTo(deviceId).limitToLast(500).once('value')
+    : await database.ref('scan_logs').orderByChild('scannedAt').limitToLast(500).once('value');
 
   const list: any[] = [];
   snapshot.forEach((child) => {
@@ -233,6 +246,7 @@ export async function getScanLogs(deviceId?: string) {
         ticketId: String(val.ticketId || ''),
         deviceId: String(val.deviceId || ''),
         deviceName: String(val.deviceName || ''),
+        museumId: String(val.museumId || ''),
         scannedAt: toDateString(val.scannedAt),
         outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
         gateAction: String(val.gateAction || 'entry') as ScanLog['gateAction'],

@@ -21,7 +21,11 @@ export async function GET() {
       success: true,
       count: uniqueMuseums.length,
       museums: uniqueMuseums
-    }, 200);
+    }, 200, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300'
+      }
+    });
   } catch (error) {
     return jsonError(toErrorMessage(error, 'Unable to fetch museums'), 500);
   }

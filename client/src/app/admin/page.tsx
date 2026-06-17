@@ -29,7 +29,7 @@ import { DashboardHeader } from '../../components/ui/dashboard-header';
 import { RevenueChart } from '../../components/ui/revenue-chart';
 import { SidebarInset, SidebarProvider } from '../../components/ui/sidebar';
 import { getFirebaseClientFirestore, getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { collection, query as firestoreQuery, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query as firestoreQuery, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -873,7 +873,7 @@ export default function AdminDashboardPage() {
     });
 
     // 2. Bookings Listener (Realtime Database)
-    const bookingsRef = databaseQuery(ref(rdb, 'bookings'), orderByChild('createdAt'));
+    const bookingsRef = databaseQuery(ref(rdb, 'bookings'), orderByChild('createdAt'), limitToLast(500));
     const unsubscribeBookings = onValue(bookingsRef, (snapshot) => {
       const list: Booking[] = [];
       snapshot.forEach((child) => {
@@ -909,7 +909,7 @@ export default function AdminDashboardPage() {
     });
 
     // 3. Users Listener
-    const usersQuery = firestoreQuery(collection(fStore, 'users'), orderBy('createdAt', 'desc'));
+    const usersQuery = firestoreQuery(collection(fStore, 'users'), orderBy('createdAt', 'desc'), limit(500));
     const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
       const list = snapshot.docs.map((doc) => {
         const data = doc.data();

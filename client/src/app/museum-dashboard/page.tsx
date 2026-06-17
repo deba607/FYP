@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
 import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { ref, onValue, query as databaseQuery, orderByChild } from 'firebase/database';
+import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
@@ -45,6 +45,7 @@ type ScanLog = {
   ticketId: string;
   deviceId: string;
   deviceName: string;
+  museumId: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
   gateAction: 'entry' | 'exit';
@@ -314,7 +315,7 @@ export default function MuseumDashboardPage() {
     });
 
     // Set up scan logs listener
-    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'));
+    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'), limitToLast(500));
     const unsubscribeLogs = onValue(logsRef, (snapshot) => {
       const list: ScanLog[] = [];
       snapshot.forEach((child) => {
@@ -324,6 +325,7 @@ export default function MuseumDashboardPage() {
           ticketId: String(val.ticketId || ''),
           deviceId: String(val.deviceId || ''),
           deviceName: String(val.deviceName || ''),
+          museumId: String(val.museumId || ''),
           scannedAt: String(val.scannedAt || ''),
           outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
           gateAction: String(val.gateAction || 'entry') as ScanLog['gateAction'],
@@ -338,7 +340,7 @@ export default function MuseumDashboardPage() {
     });
 
     // Set up bookings listener
-    const bookingsRef = databaseQuery(ref(db, 'bookings'), orderByChild('createdAt'));
+    const bookingsRef = databaseQuery(ref(db, 'bookings'), orderByChild('createdAt'), limitToLast(1000));
     const unsubscribeBookings = onValue(bookingsRef, (snapshot) => {
       const list: Booking[] = [];
       snapshot.forEach((child) => {
@@ -448,12 +450,34 @@ export default function MuseumDashboardPage() {
       : controllers;
   }, [controllers, currentMuseum, shouldRestrictToCurrentMuseum]);
 
+  const scopedScanLogs = useMemo(() => {
+    if (!shouldRestrictToCurrentMuseum) {
+      return scanLogs;
+    }
+
+    if (!currentMuseum) {
+      return [];
+    }
+
+    const museumIds = new Set(
+      [currentMuseum.id, currentMuseum.museum_id]
+        .filter(Boolean)
+        .map((value) => value.toLowerCase())
+    );
+    const allowedDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
+
+    return scanLogs.filter((log) => {
+      const logMuseumId = log.museumId.trim().toLowerCase();
+      if (logMuseumId && museumIds.has(logMuseumId)) {
+        return true;
+      }
+
+      return allowedDeviceIds.has(log.deviceId);
+    });
+  }, [currentMuseum, scanLogs, scopedControllers, shouldRestrictToCurrentMuseum]);
+
   // Metrics
   const metrics = useMemo(() => {
-    const allowedDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
-    const scopedScanLogs = shouldRestrictToCurrentMuseum
-      ? scanLogs.filter((log) => allowedDeviceIds.has(log.deviceId))
-      : scanLogs;
     const totalDevices = scopedControllers.length;
     const activeDevices = scopedControllers.filter((c) => c.status === 'active').length;
     const maintenanceDevices = scopedControllers.filter((c) => c.status === 'maintenance').length;
@@ -471,7 +495,7 @@ export default function MuseumDashboardPage() {
       failedScans,
       passRate
     };
-  }, [scanLogs, scopedControllers, shouldRestrictToCurrentMuseum]);
+  }, [scopedControllers, scopedScanLogs]);
 
   // Filters
   const filteredControllers = useMemo(() => {
@@ -483,13 +507,9 @@ export default function MuseumDashboardPage() {
   }, [scopedControllers, searchQuery]);
 
   const filteredLogs = useMemo(() => {
-    const allowedDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
-    const baseLogs = shouldRestrictToCurrentMuseum
-      ? scanLogs.filter((log) => allowedDeviceIds.has(log.deviceId))
-      : scanLogs;
     const needle = searchQuery.trim().toLowerCase();
-    if (!needle) return baseLogs;
-    return baseLogs.filter(
+    if (!needle) return scopedScanLogs;
+    return scopedScanLogs.filter(
       (l) =>
         l.ticketId.toLowerCase().includes(needle) ||
         l.deviceName.toLowerCase().includes(needle) ||
@@ -497,7 +517,7 @@ export default function MuseumDashboardPage() {
         l.gateAction.toLowerCase().includes(needle) ||
         l.outcome.toLowerCase().includes(needle)
     );
-  }, [scanLogs, scopedControllers, searchQuery, shouldRestrictToCurrentMuseum]);
+  }, [scopedScanLogs, searchQuery]);
 
   const scopedBookings = useMemo(() => {
     if (!shouldRestrictToCurrentMuseum) {
@@ -701,10 +721,6 @@ export default function MuseumDashboardPage() {
       )
     );
 
-    const scopedScanLogs = shouldRestrictToCurrentMuseum
-      ? scanLogs.filter((log) => scopedControllers.some((controller) => controller.id === log.deviceId))
-      : scanLogs;
-
     switch (detailModal) {
       case 'controllers':
         return {
@@ -755,7 +771,7 @@ export default function MuseumDashboardPage() {
       default:
         return null;
     }
-  }, [bookingMetrics, detailModal, metrics, scanLogs, scopedBookings, scopedControllers, shouldRestrictToCurrentMuseum, visitorStats]);
+  }, [bookingMetrics, detailModal, metrics, scopedBookings, scopedControllers, scopedScanLogs, visitorStats]);
 
   if (!authChecked) {
     return (
@@ -1064,14 +1080,14 @@ export default function MuseumDashboardPage() {
                                 <Loader2 className="mx-auto h-5 w-5 animate-spin text-emerald-500" />
                               </td>
                             </tr>
-                          ) : scanLogs.length === 0 ? (
+                          ) : scopedScanLogs.length === 0 ? (
                             <tr>
                               <td colSpan={4} className="py-8 text-center text-muted-foreground">
                                 No entry scans logged yet.
                               </td>
                             </tr>
                           ) : (
-                            scanLogs.slice(0, 7).map((log) => (
+                            scopedScanLogs.slice(0, 7).map((log) => (
                               <tr key={log.id} className="border-b last:border-0 hover:bg-muted/10">
                                 <td className="py-2.5 text-xs text-muted-foreground">{formatDate(log.scannedAt)}</td>
                                 <td className="py-2.5 font-medium">{log.ticketId}</td>

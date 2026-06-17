@@ -67,14 +67,18 @@ export async function POST(req: NextRequest) {
       return jsonError('Ticket ID is required', 400);
     }
 
+    const controllerResultPromise = getControllerById(deviceId)
+      .then((value) => ({ ok: true, value }) as const)
+      .catch((error) => ({ ok: false, error }) as const);
+
     // 1. Fetch booking details (by public bookingId or Firestore document ID)
     let booking: any = null;
     try {
-      const res = await getBookingByBookingId(ticketId);
+      const res = await getBookingByBookingId(ticketId, { enrich: false });
       booking = res.booking;
     } catch {
       try {
-        const res = await getBookingById(ticketId);
+        const res = await getBookingById(ticketId, { enrich: false });
         booking = res.booking;
       } catch {
         // Log denied scan: ticket not found
@@ -87,25 +91,24 @@ export async function POST(req: NextRequest) {
     // Normalized ticket public ID
     const normalizedTicketId = booking.bookingId || ticketId;
 
-    let controller: Awaited<ReturnType<typeof getControllerById>>;
-    try {
-      controller = await getControllerById(deviceId);
-    } catch {
+    const controllerResult = await controllerResultPromise;
+    if (!controllerResult.ok) {
       const msg = 'Access denied - Controller device is not registered';
       await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
+    const controller = controllerResult.value;
     if (controller.status !== 'active') {
       const msg = `Access denied - Controller "${controller.name || deviceId}" is ${controller.status}`;
-      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
 
     if (!controller.museumId) {
       const msg = `Access denied - Controller "${controller.name || deviceId}" is not linked to a museum`;
-      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
@@ -149,20 +152,20 @@ export async function POST(req: NextRequest) {
 
     if (!museumIdsMatch) {
       const msg = `Access denied - this ticket is for ${booking.museumName || 'another museum'}, but this gate belongs to ${controller.name || 'another museum gate'}`;
-      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
 
     // 2. Check booking status
     if (booking.status === 'cancelled') {
-      await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is cancelled', gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is cancelled', gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: Access denied - Ticket has been cancelled`);
       return jsonSuccess({ valid: false, message: 'Access denied - Ticket has been cancelled', booking }, 200);
     }
 
     if (booking.paymentStatus !== 'paid' && booking.status !== 'confirmed') {
-      await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is unpaid/unconfirmed', gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is unpaid/unconfirmed', gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: Access denied - Ticket is not confirmed or paid`);
       return jsonSuccess({ valid: false, message: 'Access denied - Ticket is not confirmed or paid', booking }, 200);
     }
@@ -173,7 +176,7 @@ export async function POST(req: NextRequest) {
 
     if (booking.visitDate !== todayStr) {
       const msg = `Access denied - Ticket is valid for date ${booking.visitDate}, but today is ${todayStr}`;
-      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
@@ -200,7 +203,7 @@ export async function POST(req: NextRequest) {
     if (gateAction === 'entry' && entryCount >= totalTicketsAllowed) {
       const lastEntry = entryScans[entryCount - 1];
       const msg = `Access denied - All ${totalTicketsAllowed} tickets have already entered. Last entry at ${formatScanTime(lastEntry?.scannedAt || '')} on ${lastEntry?.deviceName || 'unknown gate'}`;
-      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+      await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `entry scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
       return jsonSuccess({ valid: false, message: msg, booking }, 200);
     }
@@ -208,19 +211,19 @@ export async function POST(req: NextRequest) {
     if (gateAction === 'exit') {
       if (entryCount === 0) {
         const msg = 'Exit denied - Ticket has not been scanned for entry yet';
-        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
         void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `exit scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
         return jsonSuccess({ valid: false, message: msg, booking }, 200);
       }
       if (exitCount >= entryCount) {
         const msg = `Exit denied - All entered visitors (${entryCount}) have already exited`;
-        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
         void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `exit scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
         return jsonSuccess({ valid: false, message: msg, booking }, 200);
       }
       if (exitCount >= totalTicketsAllowed) {
         const msg = `Exit denied - All ${totalTicketsAllowed} tickets have already exited`;
-        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction);
+        await logScan(normalizedTicketId, deviceId, 'denied', msg, gateAction, controller);
         void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `exit scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
         return jsonSuccess({ valid: false, message: msg, booking }, 200);
       }
@@ -230,7 +233,7 @@ export async function POST(req: NextRequest) {
     const successMessage = gateAction === 'entry'
       ? `Entry granted - Ticket ${entryCount + 1} of ${totalTicketsAllowed} verified successfully`
       : `Exit recorded - Ticket ${exitCount + 1} of ${totalTicketsAllowed} verified successfully`;
-    await logScan(normalizedTicketId, deviceId, 'granted', successMessage, gateAction);
+    await logScan(normalizedTicketId, deviceId, 'granted', successMessage, gateAction, controller);
     void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `${gateAction} scan granted for ticket ${normalizedTicketId}. Reason: ${successMessage}`);
     return jsonSuccess({ valid: true, message: successMessage, booking, gateAction }, 200);
 

@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
 import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../lib/config/firebaseClient';
-import { ref, onValue, query as databaseQuery, orderByChild } from 'firebase/database';
+import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 
@@ -46,10 +46,19 @@ type ScanLog = {
   ticketId: string;
   deviceId: string;
   deviceName: string;
+  museumId: string;
   scannedAt: string;
   outcome: 'granted' | 'denied';
   gateAction: GateAction;
   message: string;
+};
+
+type MuseumRecord = {
+  id: string;
+  museum_id: string;
+  name: string;
+  location: string;
+  loginEmail?: string;
 };
 
 type StoredUser = {
@@ -92,6 +101,21 @@ function waitForVideoElement(videoRef: RefObject<HTMLVideoElement | null>) {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 function formatDate(value: string) {
   if (!value) return '-';
   const date = new Date(value);
@@ -131,6 +155,18 @@ function cameraErrorMessage(error: unknown) {
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return 'No camera found on this device.';
   }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'Camera is already in use by another app or browser tab. Close it and retry.';
+  }
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return 'The selected camera could not satisfy the requested settings. Retry scanner or use manual input.';
+  }
+  if (name === 'SecurityError') {
+    return 'Camera access is blocked by browser security settings.';
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
   if (typeof window !== 'undefined' && !window.isSecureContext) {
     return 'Camera scanning requires HTTPS or localhost. Open this page on localhost or a secure HTTPS address.';
   }
@@ -152,6 +188,7 @@ export default function ControllerDashboardPage() {
 
   const [controllers, setControllers] = useState<ControllerDevice[]>([]);
   const [localLogs, setLocalLogs] = useState<ScanLog[]>([]);
+  const [museums, setMuseums] = useState<MuseumRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedGateIds, setSelectedGateIds] = useState<Record<GateAction, string>>({
@@ -178,22 +215,60 @@ export default function ControllerDashboardPage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const isAuthorized =
     user?.role === 'admin' || user?.role === 'museum' || user?.role === 'controller';
+  const signedInEmail = user?.email?.trim().toLowerCase() || '';
+  const currentMuseum = useMemo(() => {
+    if (!signedInEmail) return null;
+    return museums.find((museum) => museum.loginEmail?.trim().toLowerCase() === signedInEmail) || null;
+  }, [museums, signedInEmail]);
+  const shouldRestrictToCurrentMuseum = user?.role === 'museum';
+
+  const scopedControllers = useMemo(() => {
+    if (!shouldRestrictToCurrentMuseum) {
+      return controllers;
+    }
+
+    if (!currentMuseum) {
+      return [];
+    }
+
+    return controllers.filter(
+      (controller) => controller.museumId === currentMuseum.museum_id || controller.museumId === currentMuseum.id
+    );
+  }, [controllers, currentMuseum, shouldRestrictToCurrentMuseum]);
 
   const selectedDevices = useMemo(() => {
     return {
-      entry: controllers.find((c) => c.id === selectedGateIds.entry) || null,
-      exit: controllers.find((c) => c.id === selectedGateIds.exit) || null
+      entry: scopedControllers.find((c) => c.id === selectedGateIds.entry) || null,
+      exit: scopedControllers.find((c) => c.id === selectedGateIds.exit) || null
     };
-  }, [controllers, selectedGateIds]);
+  }, [scopedControllers, selectedGateIds]);
 
   const visibleLogs = useMemo(() => {
+    const availableDeviceIds = new Set(scopedControllers.map((controller) => controller.id));
+    const museumIds = new Set(
+      currentMuseum
+        ? [currentMuseum.id, currentMuseum.museum_id]
+          .filter(Boolean)
+          .map((value) => value.toLowerCase())
+        : []
+    );
+    const scopedLogs = shouldRestrictToCurrentMuseum
+      ? localLogs.filter((log) => {
+        const logMuseumId = log.museumId.trim().toLowerCase();
+        if (logMuseumId && museumIds.has(logMuseumId)) {
+          return true;
+        }
+        return availableDeviceIds.has(log.deviceId);
+      })
+      : localLogs;
     const selected = new Set(Object.values(selectedGateIds).filter(Boolean));
-    if (selected.size === 0) return localLogs;
-    return localLogs.filter((log) => selected.has(log.deviceId));
-  }, [localLogs, selectedGateIds]);
+    if (selected.size === 0) return scopedLogs;
+    return scopedLogs.filter((log) => selected.has(log.deviceId));
+  }, [currentMuseum, localLogs, scopedControllers, selectedGateIds, shouldRestrictToCurrentMuseum]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -254,6 +329,30 @@ export default function ControllerDashboardPage() {
   useEffect(() => {
     if (!authChecked || !isAuthorized || !firebaseAuthReady) return;
 
+    let mounted = true;
+    fetch('/api/museums')
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Unable to load museums');
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!mounted) return;
+        setMuseums(Array.isArray(payload?.museums) ? payload.museums : []);
+      })
+      .catch((err) => {
+        console.error('Failed to load museums for controller scoping:', err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authChecked, isAuthorized, firebaseAuthReady]);
+
+  useEffect(() => {
+    if (!authChecked || !isAuthorized || !firebaseAuthReady) return;
+
     setLoading(true);
     const db = getFirebaseClientRealtimeDatabase();
     const controllersRef = databaseQuery(ref(db, 'controllers'), orderByChild('createdAt'));
@@ -273,16 +372,6 @@ export default function ControllerDashboardPage() {
       });
       list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setControllers(list);
-
-      setSelectedGateIds((prev) => {
-        if (list.length === 0) return { entry: '', exit: '' };
-        const first = list[0]!.id;
-        const second = list[1]?.id || first;
-        return {
-          entry: prev.entry && list.some((c) => c.id === prev.entry) ? prev.entry : first,
-          exit: prev.exit && list.some((c) => c.id === prev.exit) ? prev.exit : second
-        };
-      });
       setLoading(false);
     }, (err) => {
       console.error('Failed to subscribe to controllers:', err);
@@ -293,10 +382,22 @@ export default function ControllerDashboardPage() {
   }, [authChecked, isAuthorized, firebaseAuthReady]);
 
   useEffect(() => {
+    setSelectedGateIds((prev) => {
+      if (scopedControllers.length === 0) return { entry: '', exit: '' };
+      const first = scopedControllers[0]!.id;
+      const second = scopedControllers[1]?.id || first;
+      return {
+        entry: prev.entry && scopedControllers.some((c) => c.id === prev.entry) ? prev.entry : first,
+        exit: prev.exit && scopedControllers.some((c) => c.id === prev.exit) ? prev.exit : second
+      };
+    });
+  }, [scopedControllers]);
+
+  useEffect(() => {
     if (!firebaseAuthReady) return;
 
     const db = getFirebaseClientRealtimeDatabase();
-    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'));
+    const logsRef = databaseQuery(ref(db, 'scan_logs'), orderByChild('scannedAt'), limitToLast(200));
 
     const unsubscribe = onValue(logsRef, (snapshot) => {
       const list: ScanLog[] = [];
@@ -307,6 +408,7 @@ export default function ControllerDashboardPage() {
           ticketId: String(val.ticketId || ''),
           deviceId: String(val.deviceId || ''),
           deviceName: String(val.deviceName || ''),
+          museumId: String(val.museumId || ''),
           scannedAt: String(val.scannedAt || ''),
           outcome: String(val.outcome || 'denied') as ScanLog['outcome'],
           gateAction: String(val.gateAction || 'entry') as ScanLog['gateAction'],
@@ -332,6 +434,19 @@ export default function ControllerDashboardPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, [gateOpenCountdown.entry, gateOpenCountdown.exit]);
+
+  useEffect(() => {
+    (['entry', 'exit'] as const).forEach((gateAction) => {
+      if (gateOpenCountdown[gateAction] !== 0 || validationResults[gateAction].status !== 'success') {
+        return;
+      }
+
+      setValidationResults((current) => ({
+        ...current,
+        [gateAction]: { status: 'idle', message: '' }
+      }));
+    });
+  }, [gateOpenCountdown, validationResults]);
 
   useEffect(() => {
     return () => {
@@ -370,6 +485,12 @@ export default function ControllerDashboardPage() {
   const stopCamera = useCallback((message = 'Scanner stopped.') => {
     scannerControlsRef.current?.stop();
     scannerControlsRef.current = null;
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
     setCameraSession((current) => current ? { ...current, error: message } : null);
   }, []);
 
@@ -415,7 +536,7 @@ export default function ControllerDashboardPage() {
       });
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok && data?.success) {
+      if (res.ok && typeof data?.valid === 'boolean') {
         if (data.valid) {
           setValidationResults((current) => ({
             ...current,
@@ -481,8 +602,7 @@ export default function ControllerDashboardPage() {
       return;
     }
 
-    scannerControlsRef.current?.stop();
-    scannerControlsRef.current = null;
+    stopCamera('');
     setCameraSession({ gateAction, status: 'starting', error: '' });
 
     window.setTimeout(async () => {
@@ -494,9 +614,29 @@ export default function ControllerDashboardPage() {
 
       let resolved = false;
       try {
+        const stream = await withTimeout(
+          navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          }),
+          15000,
+          'Camera permission timed out. Allow camera access and retry.'
+        );
+
+        cameraStreamRef.current = stream;
+        videoElement.srcObject = stream;
+        videoElement.muted = true;
+        videoElement.playsInline = true;
+        await videoElement.play().catch(() => undefined);
+        setCameraSession({ gateAction, status: 'active', error: '' });
+
         const reader = new BrowserQRCodeReader();
         let controls: { stop: () => void } | null = null;
-        controls = await reader.decodeFromVideoDevice(undefined, videoElement, (result, error, scannerControls) => {
+        controls = await withTimeout(reader.decodeFromStream(stream, videoElement, (result, error, scannerControls) => {
           if (error && !isExpectedQrDecodeMiss(error)) {
             console.error('QR scanner decode error:', error);
           }
@@ -507,16 +647,21 @@ export default function ControllerDashboardPage() {
           scannerControlsRef.current = null;
           setCameraSession(null);
           void validateTicket(gateAction, value, device.id);
-        });
+        }), 8000, 'Camera opened, but QR scanner could not start. Retry scanner or use manual input.');
         scannerControlsRef.current = controls;
-        setCameraSession({ gateAction, status: 'active', error: '' });
       } catch (error) {
         console.error('QR scanner start error:', error);
         scannerControlsRef.current = null;
+        cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+        cameraStreamRef.current = null;
+        if (videoElement) {
+          videoElement.pause();
+          videoElement.srcObject = null;
+        }
         setCameraSession({ gateAction, status: 'active', error: cameraErrorMessage(error) });
       }
     }, 0);
-  }, [selectedDevices, validateTicket]);
+  }, [selectedDevices, stopCamera, validateTicket]);
 
   const handleManualSubmit = (gateAction: GateAction) => (e: FormEvent) => {
     e.preventDefault();
@@ -542,7 +687,7 @@ export default function ControllerDashboardPage() {
             </label>
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin text-teal-400" />
-            ) : controllers.length === 0 ? (
+            ) : scopedControllers.length === 0 ? (
               <div className="flex items-center gap-1.5 text-sm font-medium text-amber-400">
                 <ShieldAlert className="h-4 w-4" />
                 No controllers registered. Create one in the Museum supervisor view.
@@ -553,7 +698,7 @@ export default function ControllerDashboardPage() {
                 onChange={(e) => setSelectedGateIds((current) => ({ ...current, [gateAction]: e.target.value }))}
                 className="w-full rounded-lg border border-slate-700 bg-[#1f2937] px-3 py-2 text-sm text-white outline-hidden focus:ring-2 focus:ring-teal-500/20"
               >
-                {controllers.map((c) => (
+                {scopedControllers.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({c.status})
                   </option>
@@ -921,7 +1066,7 @@ export default function ControllerDashboardPage() {
 
               <div className="space-y-4 p-5">
                 <div className="relative aspect-video overflow-hidden rounded-xl border border-slate-700 bg-black">
-                  <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+                  <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
                   {cameraSession.status === 'starting' && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                       <Loader2 className="h-8 w-8 animate-spin text-teal-300" />

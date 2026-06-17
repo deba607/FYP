@@ -2,11 +2,13 @@
   "rules": {
     "user_activities": {
       ".read": "true",
-      ".write": "true"
+      ".write": "true",
+      ".indexOn": ["timestamp"]
     },
     "bookings": {
       ".read": "true",
-      ".write": "true"
+      ".write": "true",
+      ".indexOn": ["createdAt", "email"]
     },
     "bookingsByUser": {
       "$userId": {
@@ -16,12 +18,13 @@
     },
     "controllers": {
       ".read": "true",
-      ".write": "true"
+      ".write": "true",
+      ".indexOn": ["createdAt", "museumId"]
     },
     "scan_logs": {
       ".read": "true",
       ".write": "true",
-      ".indexOn": ["ticketId"]
+      ".indexOn": ["ticketId", "scannedAt", "deviceId", "museumId"]
     }
   }
 }
