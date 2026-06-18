@@ -182,13 +182,11 @@ export async function logScan(
 
 export async function getScanLogs(deviceId?: string) {
   const firestore = getFirebaseFirestore();
-  let query = firestore.collection('scan_logs').orderBy('scannedAt', 'desc');
+  const query = deviceId
+    ? firestore.collection('scan_logs').where('deviceId', '==', deviceId)
+    : firestore.collection('scan_logs').orderBy('scannedAt', 'desc');
 
-  if (deviceId) {
-    query = query.where('deviceId', '==', deviceId);
-  }
-
-  const snapshot = await query.limit(100).get();
+  const snapshot = await query.limit(deviceId ? 250 : 100).get();
 
   const logs = snapshot.docs.map((doc) => {
     const data = doc.data();
@@ -201,7 +199,8 @@ export async function getScanLogs(deviceId?: string) {
       outcome: String(data.outcome || 'denied') as ScanLog['outcome'],
       message: String(data.message || '')
     };
-  });
+  }).sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime())
+    .slice(0, 100);
 
   return {
     success: true,

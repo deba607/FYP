@@ -607,7 +607,9 @@ export default function AdminDashboardPage() {
   const [selectedMuseum, setSelectedMuseum] = useState('All Museums');
 
   const museumOptions = useMemo(() => {
-    const names = bookings.map((b) => b.museumName).filter(Boolean);
+    const names = bookings
+      .map((b) => b.museumName)
+      .filter((name): name is string => Boolean(name));
     return ['All Museums', ...Array.from(new Set(names))];
   }, [bookings]);
 

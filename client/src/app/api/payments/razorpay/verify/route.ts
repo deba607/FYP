@@ -27,6 +27,10 @@ function getRazorpaySecret() {
   return keySecret;
 }
 
+function isRazorpayBypassEnabled() {
+  return process.env.RAZORPAY_BYPASS === 'true';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -55,18 +59,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!body?.razorpayOrderId || !body?.razorpayPaymentId || !body?.razorpaySignature) {
+    const bypassEnabled = isRazorpayBypassEnabled();
+
+    if (!body?.razorpayOrderId || !body?.razorpayPaymentId || (!bypassEnabled && !body?.razorpaySignature)) {
       throw new ApiError('Missing Razorpay payment details', 400);
     }
 
-    const secret = getRazorpaySecret();
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(`${body.razorpayOrderId}|${body.razorpayPaymentId}`)
-      .digest('hex');
+    if (!bypassEnabled) {
+      const secret = getRazorpaySecret();
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(`${body.razorpayOrderId}|${body.razorpayPaymentId}`)
+        .digest('hex');
 
-    if (expectedSignature !== body.razorpaySignature) {
-      throw new ApiError('Invalid payment signature', 400);
+      if (expectedSignature !== body.razorpaySignature) {
+        throw new ApiError('Invalid payment signature', 400);
+      }
     }
 
     const { pricePerTicket, totalAmount } = calculateBookingTotal({
@@ -101,13 +109,15 @@ export async function POST(req: NextRequest) {
       booking.email,
       'Payment',
       'payment_verified',
-      `Verified Razorpay payment for booking ${result.booking.bookingId} (${booking.museumName || 'Bharat Museum'}). Amount: INR ${totalAmount}`
+      `${bypassEnabled ? 'Bypassed Razorpay and created' : 'Verified Razorpay payment for'} booking ${result.booking.bookingId} (${booking.museumName || 'Bharat Museum'}). Amount: INR ${totalAmount}`
     );
 
     return jsonSuccess(
       {
         success: true,
-        message: 'Payment verified and booking created successfully',
+        message: bypassEnabled
+          ? 'Razorpay bypass enabled - booking created successfully'
+          : 'Payment verified and booking created successfully',
         booking: {
           ...result.booking,
           totalAmount

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "clean": "node -e \"require('fs').rmSync('.next',{ recursive: true, force: true }); console.log('Cleaned .next');\"",
     "rebuild": "npm run clean && npm run build",
     "build": "next build",

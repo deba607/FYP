@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -442,7 +442,7 @@ function InlineDatePicker({ onSelectDate, disabled }: { onSelectDate: (date: str
             let bg = 'transparent';
             let color = cell.isCurrentMonth ? '#e0e0e0' : '#555566';
             let fontWeight = '400';
-            let border = 'none';
+            const border = 'none';
 
             if (cellSelected) {
               bg = '#1565c0';
@@ -1050,7 +1050,46 @@ export default function BookingWithChatBot() {
         totalPrice: totalAmount
       };
 
+      const handleVerifiedBooking = async (verified: Awaited<ReturnType<typeof verifyRazorpayPayment>>) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            text: translate(language, 'chat.bookingConfirmed', {
+              bookingId: verified.booking.bookingId,
+              email: email.trim()
+            }),
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
+
+        try {
+          const mod = await import('canvas-confetti');
+          const confetti = (mod && (mod.default || mod)) as any;
+          confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+        } catch {
+          // ignore if confetti isn't available
+        }
+
+        setBookingData((prev) => ({ ...prev, ready_to_confirm: false }));
+        setName('');
+        setEmail('');
+        setPhone('');
+      };
+
       const orderResponse = await createRazorpayOrder(bookingPayload);
+
+      if (orderResponse.bypass) {
+        const verified = await verifyRazorpayPayment({
+          booking: bookingPayload,
+          razorpayOrderId: orderResponse.order.id,
+          razorpayPaymentId: `pay_bypass_${Date.now()}`,
+          razorpaySignature: 'bypass'
+        });
+        await handleVerifiedBooking(verified);
+        setConfirming(false);
+        return;
+      }
 
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
@@ -1103,30 +1142,7 @@ export default function BookingWithChatBot() {
               razorpaySignature: response.razorpay_signature
             });
 
-            setMessages((prev) => [
-              ...prev,
-              {
-                from: 'bot',
-                text: translate(language, 'chat.bookingConfirmed', {
-                  bookingId: verified.booking.bookingId,
-                  email: email.trim()
-                }),
-                timestamp: new Date().toLocaleTimeString()
-              }
-            ]);
-
-            try {
-              const mod = await import('canvas-confetti');
-              const confetti = (mod && (mod.default || mod)) as any;
-              confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-            } catch {
-              // ignore if confetti isn't available
-            }
-
-            setBookingData((prev) => ({ ...prev, ready_to_confirm: false }));
-            setName('');
-            setEmail('');
-            setPhone('');
+            await handleVerifiedBooking(verified);
           } catch (paymentError) {
             setMessages((prev) => [
               ...prev,

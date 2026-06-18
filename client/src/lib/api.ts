@@ -69,6 +69,7 @@ export type BookingResponse = {
 
 export type RazorpayOrderResponse = {
   success: boolean;
+  bypass?: boolean;
   keyId: string;
   order: {
     id: string;

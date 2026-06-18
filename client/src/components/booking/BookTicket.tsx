@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Label } from '../ui/label';
@@ -13,8 +13,18 @@ import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
+
+type BookingMuseum = {
+  museum_id: string;
+  name: string;
+  location: string;
+  category: string;
+  price: number;
+  prices?: Record<string, number>;
+};
+
 // Sample museum list (will be replaced by API/data source later)
-const MUSEUMS = [
+const MUSEUMS: BookingMuseum[] = [
   { museum_id: 'national_museum', name: 'National Museum', location: 'New Delhi', category: 'History/Art', price: 200 },
   { museum_id: 'indian_museum', name: 'Indian Museum', location: 'Kolkata', category: 'Multi-purpose', price: 180 },
   { museum_id: 'salar_jung', name: 'Salar Jung Museum', location: 'Hyderabad', category: 'Art/Antiques', price: 220 }
@@ -30,12 +40,12 @@ const VISITOR_TYPES = [
 ] as const;
 
 const VISITOR_CATEGORIES = [
-  { name: 'Adult', price: 200, emoji: '🧑' },
-  { name: 'Child', price: 100, emoji: '👶' },
-  { name: 'Senior Citizen', price: 150, emoji: '👴' },
-  { name: 'Student', price: 120, emoji: '🎓' },
-  { name: 'Professor', price: 180, emoji: '📚' },
-  { name: 'Researcher/Scientist', price: 180, emoji: '🔬' }
+  { name: 'Adult', price: 200, emoji: 'ðŸ§‘' },
+  { name: 'Child', price: 100, emoji: 'ðŸ‘¶' },
+  { name: 'Senior Citizen', price: 150, emoji: 'ðŸ‘´' },
+  { name: 'Student', price: 120, emoji: 'ðŸŽ“' },
+  { name: 'Professor', price: 180, emoji: 'ðŸ“š' },
+  { name: 'Researcher/Scientist', price: 180, emoji: 'ðŸ”¬' }
 ];
 
 const MAX_TICKETS = 6;
@@ -159,7 +169,7 @@ function BookTicket() {
 
   useEffect(() => {
     if (selectedMuseum && !museumSearchOpen) {
-      setMuseumQuery(`${selectedMuseum.name} — ${selectedMuseum.location}`);
+      setMuseumQuery(`${selectedMuseum.name} â€” ${selectedMuseum.location}`);
     }
   }, [museumSearchOpen, selectedMuseum]);
 
@@ -170,39 +180,40 @@ function BookTicket() {
   const visitorType = useMemo(() => {
     const parts = Object.entries(visitorCombo)
       .filter(([, count]) => count > 0)
-      .map(([type, count]) => `${count}× ${type}`);
+      .map(([type, count]) => `${count}Ã— ${type}`);
     return parts.join(', ') || 'Adult';
   }, [visitorCombo]);
 
   const visitorCategories = useMemo(() => {
     const defaultCategories = [
-      { name: 'Adult', price: 200, emoji: '🧑' },
-      { name: 'Child', price: 100, emoji: '👶' },
-      { name: 'Senior Citizen', price: 150, emoji: '👴' },
-      { name: 'Student', price: 120, emoji: '🎓' },
-      { name: 'Professor', price: 180, emoji: '📚' },
-      { name: 'Researcher/Scientist', price: 180, emoji: '🔬' }
+      { name: 'Adult', price: 200, emoji: 'ðŸ§‘' },
+      { name: 'Child', price: 100, emoji: 'ðŸ‘¶' },
+      { name: 'Senior Citizen', price: 150, emoji: 'ðŸ‘´' },
+      { name: 'Student', price: 120, emoji: 'ðŸŽ“' },
+      { name: 'Professor', price: 180, emoji: 'ðŸ“š' },
+      { name: 'Researcher/Scientist', price: 180, emoji: 'ðŸ”¬' }
     ];
 
     if (!selectedMuseum) return defaultCategories;
 
     // Check if the museum has custom prices object
-    if (selectedMuseum.prices && typeof selectedMuseum.prices === 'object') {
+    const customPrices = selectedMuseum.prices;
+    if (customPrices && typeof customPrices === 'object') {
       return defaultCategories.map(cat => ({
         ...cat,
-        price: Number(selectedMuseum.prices[cat.name] ?? selectedMuseum.prices[cat.name.toLowerCase()] ?? cat.price)
+        price: Number(customPrices[cat.name] ?? customPrices[cat.name.toLowerCase()] ?? cat.price)
       }));
     }
 
     // Fallback if the museum only has a general base 'price'
     const basePrice = Number(selectedMuseum.price ?? 200);
     return [
-      { name: 'Adult', price: basePrice, emoji: '🧑' },
-      { name: 'Child', price: Math.round(basePrice * 0.5), emoji: '👶' },
-      { name: 'Senior Citizen', price: Math.round(basePrice * 0.75), emoji: '👴' },
-      { name: 'Student', price: Math.round(basePrice * 0.6), emoji: '🎓' },
-      { name: 'Professor', price: Math.round(basePrice * 0.9), emoji: '📚' },
-      { name: 'Researcher/Scientist', price: Math.round(basePrice * 0.9), emoji: '🔬' }
+      { name: 'Adult', price: basePrice, emoji: 'ðŸ§‘' },
+      { name: 'Child', price: Math.round(basePrice * 0.5), emoji: 'ðŸ‘¶' },
+      { name: 'Senior Citizen', price: Math.round(basePrice * 0.75), emoji: 'ðŸ‘´' },
+      { name: 'Student', price: Math.round(basePrice * 0.6), emoji: 'ðŸŽ“' },
+      { name: 'Professor', price: Math.round(basePrice * 0.9), emoji: 'ðŸ“š' },
+      { name: 'Researcher/Scientist', price: Math.round(basePrice * 0.9), emoji: 'ðŸ”¬' }
     ];
   }, [selectedMuseum]);
 
@@ -230,6 +241,10 @@ function BookTicket() {
     }
     setErrors(e);
     return e.length === 0;
+  };
+
+  const handleVerifiedBooking = async (verified: Awaited<ReturnType<typeof verifyRazorpayPayment>>) => {
+            await handleVerifiedBooking(verified);
   };
 
   const fullNameInvalid = !fullName.trim();
@@ -269,6 +284,18 @@ function BookTicket() {
       };
 
       const orderResponse = await createRazorpayOrder(bookingPayload);
+
+      if (orderResponse.bypass) {
+        const verified = await verifyRazorpayPayment({
+          booking: bookingPayload,
+          razorpayOrderId: orderResponse.order.id,
+          razorpayPaymentId: `pay_bypass_${Date.now()}`,
+          razorpaySignature: 'bypass'
+        });
+        await handleVerifiedBooking(verified);
+        setLoading(false);
+        return;
+      }
 
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
@@ -319,28 +346,7 @@ function BookTicket() {
               razorpayPaymentId: response.razorpay_payment_id,
               razorpaySignature: response.razorpay_signature
             });
-
-            setSuccess({
-              id: verified.booking.bookingId,
-              summary: `${verified.booking.numberOfTickets} ticket(s) for ${verified.booking.museumName || selectedMuseum.name} on ${new Date(verified.booking.visitDate).toLocaleDateString()} at ${verified.booking.timeSlot} — ₹${verified.booking.totalAmount}`
-            });
-
-            try {
-              const mod = await import('canvas-confetti');
-              const confetti = (mod && (mod.default || mod)) as any;
-              confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-            } catch {
-              // ignore if confetti isn't available
-            }
-
-            const profile = readBookingProfile();
-            setFullName(profile.name);
-            setEmail(profile.email);
-            setPhone(profile.phone);
-            setDate('');
-            setTime(TIME_SLOTS[0]);
-            setSelectedMuseumId(uniqueMuseums[0]?.museum_id || MUSEUMS[0].museum_id);
-            setVisitorCombo({});
+            await handleVerifiedBooking(verified);
           } catch (paymentError) {
             setErrors([(paymentError as Error).message || 'Payment verification failed. Please contact support.']);
           } finally {
@@ -389,7 +395,7 @@ function BookTicket() {
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <ul>
             {errors.map((err, i) => (
-              <li key={i}>• {err}</li>
+              <li key={i}>â€¢ {err}</li>
             ))}
           </ul>
         </div>
@@ -397,7 +403,7 @@ function BookTicket() {
 
       {success ? (
         <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-          <div className="font-medium">{translate(language, 'booking.confirmed')} — {success.id}</div>
+          <div className="font-medium">{translate(language, 'booking.confirmed')} â€” {success.id}</div>
           <div className="mt-1 text-sm text-muted-foreground">{success.summary}</div>
         </div>
       ) : null}
@@ -476,7 +482,7 @@ function BookTicket() {
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
                           setSelectedMuseumId(museum.museum_id);
-                          setMuseumQuery(`${museum.name} — ${museum.location}`);
+                          setMuseumQuery(`${museum.name} â€” ${museum.location}`);
                           setMuseumSearchOpen(false);
                         }}
                       >
@@ -484,7 +490,7 @@ function BookTicket() {
                         <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                           <MapPin className="h-3 w-3" />
                           {museum.location || 'Location unavailable'}
-                          {museum.category ? ` • ${museum.category}` : ''}
+                          {museum.category ? ` â€¢ ${museum.category}` : ''}
                         </span>
                       </button>
                     ))
@@ -497,7 +503,7 @@ function BookTicket() {
               ) : null}
             </div>
             <div className="mt-2 text-sm text-muted-foreground">
-              <div>{selectedMuseum.name} • {selectedMuseum.location}</div>
+              <div>{selectedMuseum.name} â€¢ {selectedMuseum.location}</div>
               <div className="text-xs">Category: {selectedMuseum.category}</div>
             </div>
           </div>
@@ -533,7 +539,7 @@ function BookTicket() {
                       <div className={cn("text-sm transition-colors", count > 0 ? "text-white font-medium" : "text-[#8888aa]")}>
                         {cat.emoji} {cat.name}
                       </div>
-                      <div className="text-xs text-[#666688]">₹{cat.price}/ticket</div>
+                      <div className="text-xs text-[#666688]">â‚¹{cat.price}/ticket</div>
                     </div>
 
                     {/* +/- controls */}
@@ -645,7 +651,7 @@ function BookTicket() {
         <div className="flex items-center justify-end pt-2">
           <div className="text-right">
             <div className="text-sm text-muted-foreground">{translate(language, 'booking.total')}</div>
-            <div className="text-xl font-semibold">₹{total}</div>
+            <div className="text-xl font-semibold">â‚¹{total}</div>
           </div>
         </div>
 
@@ -669,3 +675,4 @@ function BookTicket() {
 }
 
 export default BookTicket;
+

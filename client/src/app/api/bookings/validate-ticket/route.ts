@@ -8,6 +8,8 @@ import { logUserActivity } from '../../../../lib/services/activityService';
 
 export const runtime = 'nodejs';
 
+const GATE_OPEN_DURATION_MS = 7000;
+
 export async function POST(req: NextRequest) {
   let ticketId = '';
   let deviceId = 'unknown';
@@ -34,7 +36,7 @@ export async function POST(req: NextRequest) {
         // Log denied scan: ticket not found
         await logScan(ticketId, deviceId, 'denied', 'Invalid ticket - Ticket not found');
         void logUserActivity(null, 'guest', 'Scan', 'gate_scan', `Gate scan denied for ticket ${ticketId}. Reason: Invalid ticket - Ticket not found`);
-        return jsonSuccess({ valid: false, message: 'Invalid ticket - Ticket not found' }, 200);
+        return jsonSuccess({ success: true, valid: false, openGate: false, openDurationMs: 0, message: 'Invalid ticket - Ticket not found' }, 200);
       }
     }
 
@@ -45,13 +47,13 @@ export async function POST(req: NextRequest) {
     if (booking.status === 'cancelled') {
       await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is cancelled');
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `Gate scan denied for ticket ${normalizedTicketId}. Reason: Access denied - Ticket has been cancelled`);
-      return jsonSuccess({ valid: false, message: 'Access denied - Ticket has been cancelled', booking }, 200);
+      return jsonSuccess({ success: true, valid: false, openGate: false, openDurationMs: 0, message: 'Access denied - Ticket has been cancelled', booking }, 200);
     }
 
     if (booking.paymentStatus !== 'paid' && booking.status !== 'confirmed') {
       await logScan(normalizedTicketId, deviceId, 'denied', 'Access denied - Ticket is unpaid/unconfirmed');
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `Gate scan denied for ticket ${normalizedTicketId}. Reason: Access denied - Ticket is not confirmed or paid`);
-      return jsonSuccess({ valid: false, message: 'Access denied - Ticket is not confirmed or paid', booking }, 200);
+      return jsonSuccess({ success: true, valid: false, openGate: false, openDurationMs: 0, message: 'Access denied - Ticket is not confirmed or paid', booking }, 200);
     }
 
     // 3. Double-Scan / Duplicate Scan Prevention
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
       const msg = `Access denied - Ticket already scanned at ${firstScanTime} on ${gateName}`;
       await logScan(normalizedTicketId, deviceId, 'denied', msg);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `Gate scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
-      return jsonSuccess({ valid: false, message: msg, booking }, 200);
+      return jsonSuccess({ success: true, valid: false, openGate: false, openDurationMs: 0, message: msg, booking }, 200);
     }
 
     // 4. Visit Date Validation (Strict matching to local date)
@@ -85,13 +87,20 @@ export async function POST(req: NextRequest) {
       const msg = `Access denied - Ticket is valid for date ${booking.visitDate}, but today is ${todayStr}`;
       await logScan(normalizedTicketId, deviceId, 'denied', msg);
       void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `Gate scan denied for ticket ${normalizedTicketId}. Reason: ${msg}`);
-      return jsonSuccess({ valid: false, message: msg, booking }, 200);
+      return jsonSuccess({ success: true, valid: false, openGate: false, openDurationMs: 0, message: msg, booking }, 200);
     }
 
     // 5. Successful Scan - Access Granted!
     await logScan(normalizedTicketId, deviceId, 'granted', 'Access granted - Ticket verified successfully');
     void logUserActivity(booking.userId || null, booking.email || 'guest', 'Scan', 'gate_scan', `Gate scan granted for ticket ${normalizedTicketId}. Reason: Access granted - Ticket verified successfully`);
-    return jsonSuccess({ valid: true, message: 'Access granted - Ticket is valid', booking }, 200);
+    return jsonSuccess({
+      success: true,
+      valid: true,
+      openGate: true,
+      openDurationMs: GATE_OPEN_DURATION_MS,
+      message: 'Access granted - Ticket is valid',
+      booking
+    }, 200);
 
   } catch (error) {
     if (error instanceof ApiError) {

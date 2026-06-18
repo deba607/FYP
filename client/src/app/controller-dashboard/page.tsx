@@ -17,7 +17,9 @@ import {
   Volume2,
   VolumeX,
   Lock,
-  Unlock
+  Unlock,
+  Cpu,
+  Server
 } from 'lucide-react';
 import Header2 from '../../components/mvpblocks/header-2';
 
@@ -81,6 +83,7 @@ export default function ControllerDashboardPage() {
   // UI States
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [gateOpenCountdown, setGateOpenCountdown] = useState(0);
+  const [backendOrigin, setBackendOrigin] = useState('');
 
   const isAuthorized =
     user?.role === 'admin' || user?.role === 'museum' || user?.role === 'controller';
@@ -88,6 +91,14 @@ export default function ControllerDashboardPage() {
   const selectedDevice = useMemo(() => {
     return controllers.find((c) => c.id === selectedDeviceId) || null;
   }, [controllers, selectedDeviceId]);
+
+  const esp32BackendUrl =
+    backendOrigin && backendOrigin.includes('localhost')
+      ? backendOrigin.replace('localhost', 'YOUR_WIFI_IPV4')
+      : backendOrigin || 'http://your-laptop-ip:3000';
+
+  const isLocalhostBackend = backendOrigin.includes('localhost');
+  const isSelectedDeviceInactive = Boolean(selectedDevice && selectedDevice.status !== 'active');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -99,6 +110,7 @@ export default function ControllerDashboardPage() {
       } catch (err) {
         console.error('Failed to read auth user:', err);
       }
+      setBackendOrigin(window.location.origin);
       setAuthChecked(true);
     }
   }, []);
@@ -325,7 +337,7 @@ export default function ControllerDashboardPage() {
             <div>
               <div className="flex items-center gap-2">
                 <Tv className="h-5 w-5 text-teal-400" />
-                <span className="text-xs font-semibold uppercase tracking-widest text-teal-400">Simulated Hardware Terminal</span>
+                <span className="text-xs font-semibold uppercase tracking-widest text-teal-400">ESP32 Gate Terminal</span>
               </div>
               <h1 className="text-3xl font-extrabold tracking-tight text-white mt-1">Controller Dashboard</h1>
             </div>
@@ -413,6 +425,65 @@ export default function ControllerDashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* ESP32 connection details */}
+              <div className="rounded-xl border border-slate-800 bg-[#111827] p-5 shadow-lg">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-5 w-5 text-teal-400" />
+                    <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200">
+                      ESP32 Board Connection
+                    </h2>
+                  </div>
+                  <span className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 text-[10px] font-bold uppercase text-teal-300">
+                    IoT Ready
+                  </span>
+                </div>
+
+                {selectedDevice ? (
+                  <div className="grid gap-3 text-xs sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-slate-400">
+                        <Server className="h-3.5 w-3.5" />
+                        Backend URL
+                      </div>
+                      <p className="break-all font-mono text-slate-100">
+                        {esp32BackendUrl}
+                      </p>
+                      {isLocalhostBackend && (
+                        <p className="mt-2 text-[11px] leading-relaxed text-amber-300">
+                          Replace YOUR_WIFI_IPV4 with your laptop Wi-Fi IPv4 address. ESP32 cannot use localhost.
+                        </p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="mb-1 text-slate-400">Controller Device ID</div>
+                      <p className="break-all font-mono text-slate-100">{selectedDevice.id}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="mb-1 text-slate-400">Verify Endpoint</div>
+                      <p className="break-all font-mono text-slate-100">/api/bookings/validate-ticket</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="mb-1 text-slate-400">Heartbeat Endpoint</div>
+                      <p className="break-all font-mono text-slate-100">
+                        /api/controllers/{selectedDevice.id}/status
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="mb-2 text-slate-400">ESP32 config.py values</div>
+                      <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-slate-100">{`BACKEND_BASE_URL = "${esp32BackendUrl}"
+VERIFY_ENDPOINT = "/api/bookings/validate-ticket"
+HEARTBEAT_ENDPOINT_TEMPLATE = "/api/controllers/{device_id}/status"
+DEVICE_ID = "${selectedDevice.id}"`}</pre>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    Select or register a controller device to see ESP32 connection values.
+                  </p>
+                )}
               </div>
 
               {/* Scanned / Validation Display Panel */}
@@ -522,11 +593,11 @@ export default function ControllerDashboardPage() {
                       <QrCode className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
                       <input
                         type="text"
-                        disabled={scanning || (selectedDevice && selectedDevice.status !== 'active')}
+                        disabled={scanning || isSelectedDeviceInactive}
                         value={ticketInput}
                         onChange={(e) => setTicketInput(e.target.value)}
                         placeholder={
-                          selectedDevice && selectedDevice.status !== 'active'
+                          isSelectedDeviceInactive
                             ? 'Device is OFFLINE / MAINTENANCE'
                             : 'Scan QR Code / Enter Ticket ID (e.g. BM...)'
                         }
@@ -538,7 +609,7 @@ export default function ControllerDashboardPage() {
                       disabled={
                         scanning ||
                         !ticketInput.trim() ||
-                        (selectedDevice && selectedDevice.status !== 'active')
+                        isSelectedDeviceInactive
                       }
                       className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 text-sm font-semibold text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-40 transition-all shrink-0"
                     >

@@ -59,7 +59,7 @@ export function calculateBookingTotal(
   if (input.visitorCombo && Object.keys(input.visitorCombo).length > 0) {
     let totalAmount = 0;
     for (const [vType, count] of Object.entries(input.visitorCombo)) {
-      let price = TICKET_PRICES[vType as VisitorType] || 200;
+      let price: number = TICKET_PRICES[vType as VisitorType] || 200;
       if (customPrices && typeof customPrices[vType] === 'number') {
         price = customPrices[vType];
       } else if (input.pricePerTicket && input.pricePerTicket > 0) {
@@ -75,7 +75,7 @@ export function calculateBookingTotal(
     }
     const nonZeroTypes = Object.entries(input.visitorCombo).filter(([_, count]) => count > 0);
     const representativeType = nonZeroTypes.length > 0 ? nonZeroTypes[0][0] : 'Adult';
-    let pricePerTicket = TICKET_PRICES[representativeType as VisitorType] || 200;
+    let pricePerTicket: number = TICKET_PRICES[representativeType as VisitorType] || 200;
     if (customPrices && typeof customPrices[representativeType] === 'number') {
       pricePerTicket = customPrices[representativeType];
     } else if (input.pricePerTicket && input.pricePerTicket > 0) {

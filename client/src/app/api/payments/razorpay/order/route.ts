@@ -30,6 +30,10 @@ function getBasicAuthHeader(keyId: string, keySecret: string) {
   return `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`;
 }
 
+function isRazorpayBypassEnabled() {
+  return process.env.RAZORPAY_BYPASS === 'true';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -73,9 +77,31 @@ export async function POST(req: NextRequest) {
       throw new ApiError('Unable to calculate payment amount', 400);
     }
 
-    const { keyId, keySecret } = getRazorpayCredentials();
     const currency = 'INR';
     const receipt = `rcpt_${Date.now()}`;
+
+    if (isRazorpayBypassEnabled()) {
+      return jsonSuccess(
+        {
+          success: true,
+          bypass: true,
+          keyId: 'rzp_bypass_local',
+          order: {
+            id: `order_bypass_${Date.now()}`,
+            amount: Math.round(totalAmount * 100),
+            currency,
+            receipt,
+            status: 'created'
+          },
+          amount: totalAmount,
+          currency,
+          pricePerTicket
+        },
+        200
+      );
+    }
+
+    const { keyId, keySecret } = getRazorpayCredentials();
 
     const response = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',

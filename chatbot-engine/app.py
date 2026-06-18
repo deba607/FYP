@@ -6,6 +6,7 @@ import os
 import logging
 import re
 import requests
+import traceback
 from firebase_admin_helper import push_chat_message
 
 
@@ -161,9 +162,11 @@ def localize_bot_message(message: str, language: str, intent: str = "") -> str:
 
 try:
     assistant = MuseumAssistant()
+    assistant_init_error = ""
     logger.info("Museum assistant initialized successfully")
 except Exception as err:
-    logger.error("Failed to initialize museum assistant: %s", err)
+    assistant_init_error = traceback.format_exc()
+    logger.exception("Failed to initialize museum assistant")
     assistant = None
 
 
@@ -173,7 +176,8 @@ def health_check():
     if assistant is None:
         return jsonify({
             "status": "unhealthy",
-            "message": "Chatbot engine failed to initialize"
+            "message": "Chatbot engine failed to initialize",
+            "error": assistant_init_error
         }), 503
 
     return jsonify({
@@ -187,7 +191,10 @@ def chat():
     try:
         if assistant is None:
             logger.error("Assistant not initialized")
-            return jsonify({"error": translate_chat("en", "service_unavailable")}), 503
+            return jsonify({
+                "error": translate_chat("en", "service_unavailable"),
+                "details": assistant_init_error
+            }), 503
 
         if not request.is_json:
             return jsonify({"error": translate_chat("en", "invalid_request")}), 400
