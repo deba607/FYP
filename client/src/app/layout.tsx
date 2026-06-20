@@ -2,6 +2,7 @@ import './globals.css';
 import { Providers } from './providers';
 import { AppShell } from './app-shell';
 import { RuntimeEventGuard } from './runtime-event-guard';
+import AccessibilityPanel from '../components/accessibility/AccessibilityPanel';
 
 export const metadata = {
   title: 'Bharat Museum Tickets',
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body suppressHydrationWarning>
         <Providers>
           <AppShell>{children}</AppShell>
+          <AccessibilityPanel />
         </Providers>
       </body>
     </html>

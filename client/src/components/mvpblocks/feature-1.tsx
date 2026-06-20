@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import {
   Globe,
@@ -8,10 +8,13 @@ import {
   MessageCircle,
   Users,
   BarChart3,
-  Video,
+  Navigation,
   Accessibility,
   MessageSquare,
+  Puzzle,
+  Video,
 } from 'lucide-react';
+import Link from 'next/link';
 
 const features = [
   {
@@ -50,8 +53,13 @@ const features = [
     desc: 'Analyze data from chatbot interactions, bookings, payments, and sensors to help administrators make data-driven decisions.',
   },
   {
+    icon: <Navigation className="h-6 w-6" />,
+    title: 'Virtual Guide to the Museum',
+    desc: 'Get step-by-step directions from your current location to the museum, helping you plan the easiest route for your visit.',
+  },
+  {
     icon: <Video className="h-6 w-6" />,
-    title: 'Virtual Guide & Video Tours',
+    title: 'Video Tours',
     desc: 'Explore exhibits digitally with virtual guides and video museum tours, enabling remote access to museum content.',
   },
   {
@@ -63,6 +71,11 @@ const features = [
     icon: <MessageSquare className="h-6 w-6" />,
     title: 'Feedback System',
     desc: 'Share your experiences and suggestions to support continuous improvement of services and system performance.',
+  },
+  {
+    icon: <Puzzle className="h-6 w-6" />,
+    title: 'Interactive Quiz for Kids',
+    desc: 'Engage young visitors with fun, age-appropriate questions about museum exhibits, history, science, and culture while they learn through play.',
   },
 ];
 export default function Feature1() {
@@ -101,6 +114,11 @@ export default function Feature1() {
                   {item.title}
                 </h4>
                 <p className="text-gray-500">{item.desc}</p>
+                {item.title === 'Personalized Experience' ? (
+                  <Link href="/personalized" className="inline-flex text-sm font-semibold text-primary underline underline-offset-4">
+                    Open your personalized dashboard
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>

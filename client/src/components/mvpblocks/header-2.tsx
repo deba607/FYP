@@ -16,6 +16,7 @@ import { ModeToggle } from './mode-toggle'
 import { trackClientEvent } from '../ui/activity-tracker';
 import { getDashboardLinksForRole } from '../../lib/dashboardAccess';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
+import { getSiteTranslation } from '../../lib/site-translations';
 
 interface NavItem {
   name: string;
@@ -38,11 +39,15 @@ type SignedInUser = {
 const navItems: NavItem[] = [
   { name: 'Home', href: '/', labelKey: 'nav.home' },
   { name: 'Features', href: '/features', labelKey: 'nav.features' },
-  { name: 'Pricing', href: '/pricing', labelKey: 'nav.pricing' },
+  // { name: 'Pricing', href: '/pricing', labelKey: 'nav.pricing' },
   { name: 'Contact', href: '/contact', labelKey: 'nav.contact' },
   { name: 'About Us', href: '/about-us', labelKey: 'nav.about' },
   
 ];
+
+function isNavItemActive(pathname: string, href: string) {
+  return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function Header2() {
   const pathname = usePathname();
@@ -303,38 +308,54 @@ export default function Header2() {
             </motion.div>
 
             <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 px-1 xl:flex xl:gap-1 2xl:gap-2">
-              {visibleNavItems.map((item) => (
-                <motion.div
-                  key={item.name}
-                  variants={itemVariants}
-                  className="relative shrink-0"
-                  onMouseEnter={() => setHoveredItem(item.name)}
-                  onMouseLeave={() => setHoveredItem(null)}
-                >
-                  <Link
-                    href={item.href as any}
-                    className={`text-foreground/80 hover:text-foreground relative rounded-lg px-2 py-2 text-[13px] font-medium transition-colors duration-200 whitespace-nowrap xl:px-3 xl:text-sm $
-                      pathname === item.href ? 'bg-muted text-foreground' : ''
-                    }`}
+              {visibleNavItems.map((item) => {
+                const active = isNavItemActive(pathname, item.href);
+                return (
+                  <motion.div
+                    key={item.name}
+                    variants={itemVariants}
+                    className="relative shrink-0"
+                    onMouseEnter={() => setHoveredItem(item.name)}
+                    onMouseLeave={() => setHoveredItem(null)}
                   >
-                    {hoveredItem === item.name && pathname !== item.href && (
-                      <motion.div
-                        className="bg-muted absolute inset-0 rounded-lg"
-                        layoutId="navbar-hover"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 400,
-                          damping: 30,
-                        }}
-                      />
-                    )}
-                    <span className="relative z-10">{translate(language, item.labelKey)}</span>
-                  </Link>
-                </motion.div>
-              ))}
+                    <Link
+                      href={item.href as any}
+                      aria-current={active ? 'page' : undefined}
+                      className={`relative rounded-lg border px-2 py-2 text-[13px] font-medium whitespace-nowrap transition-all duration-300 xl:px-3 xl:text-sm ${
+                        active
+                          ? 'border-primary/50 bg-primary/10 text-primary shadow-lg shadow-primary/40'
+                          : 'border-transparent text-foreground/80 hover:text-foreground'
+                      }`}
+                    >
+                      {active ? (
+                        <motion.span
+                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/40"
+                          animate={{
+                            opacity: [0.35, 0.9, 0.35],
+                            boxShadow: [
+                              '0 0 4px oklch(0.645 0.246 16.439 / 0.15)',
+                              '0 0 18px oklch(0.645 0.246 16.439 / 0.55)',
+                              '0 0 4px oklch(0.645 0.246 16.439 / 0.15)'
+                            ]
+                          }}
+                          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                      ) : null}
+                      {hoveredItem === item.name && !active && (
+                        <motion.div
+                          className="bg-muted absolute inset-0 rounded-lg"
+                          layoutId="navbar-hover"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        />
+                      )}
+                      <span className="relative z-10">{translate(language, item.labelKey)}</span>
+                    </Link>
+                  </motion.div>
+                );
+              })}
             </nav>
 
             <motion.div
@@ -357,12 +378,16 @@ export default function Header2() {
                         router.push(e.target.value as any);
                       }
                     }}
-                    className="border-border bg-background/90 text-foreground hover:bg-muted inline-flex items-center rounded-md border px-3 py-2 text-sm font-semibold cursor-pointer outline-hidden focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-wait disabled:opacity-70"
+                    className={`bg-background/90 text-foreground hover:bg-muted inline-flex cursor-pointer items-center rounded-md border px-3 py-2 text-sm font-semibold outline-hidden transition-all duration-300 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-wait disabled:opacity-70 ${
+                      currentDashboard
+                        ? 'animate-pulse border-primary/60 bg-primary/10 shadow-lg shadow-primary/40'
+                        : 'border-border'
+                    }`}
                   >
-                    {!currentDashboard && <option value="" disabled className="text-muted-foreground">Select Dashboard</option>}
+                    {!currentDashboard && <option value="" disabled className="text-muted-foreground">{getSiteTranslation(language, 'Select Dashboard')}</option>}
                     {dashboardLinks.map((item) => (
                       <option key={item.href} value={item.href} className="text-foreground bg-background">
-                        {item.label}
+                        {getSiteTranslation(language, item.label)}
                       </option>
                     ))}
                   </select>
@@ -411,15 +436,16 @@ export default function Header2() {
                     </div>
                     <div className="border-border mt-3 flex items-center justify-between border-t pt-3">
                       <div className="flex flex-wrap items-center gap-3">
+                        <Link href="/personalized" className="text-sm font-medium underline">{getSiteTranslation(language, 'For You')}</Link>
                         <Link href="/profile" className="text-sm font-medium underline">{translate(language, 'auth.profile')}</Link>
                         {isAdmin ? (
                           <Link href="/admin" className="text-sm font-medium underline">{translate(language, 'nav.admin')}</Link>
                         ) : null}
                         {isMuseum ? (
-                          <Link href="/museum-dashboard" className="text-sm font-medium underline">Museum</Link>
+                          <Link href="/museum-dashboard" className="text-sm font-medium underline">{getSiteTranslation(language, 'Museum Dashboard')}</Link>
                         ) : null}
                         {isController ? (
-                          <Link href="/controller-dashboard" className="text-sm font-medium underline">Controller</Link>
+                          <Link href="/controller-dashboard" className="text-sm font-medium underline">{getSiteTranslation(language, 'Controller Dashboard')}</Link>
                         ) : null}
                       </div>
                       <button
@@ -483,23 +509,25 @@ export default function Header2() {
             >
               <div className="space-y-6 p-6">
                 <div className="space-y-1">
-                  {visibleNavItems.map((item) => (
-                    <motion.div key={item.name} variants={mobileItemVariants}>
-                      <Link
-                        href={item.href as any}
-                        className={`text-foreground hover:bg-muted block rounded-lg px-4 py-3 font-medium transition-colors duration-200 ${
-                          pathname === item.href ? 'bg-muted' : ''
-                        } ${
-                          item.name === 'Admin'
-                            ? 'border border-cyan-400/40 bg-linear-to-r from-cyan-500 via-blue-500 to-violet-500 text-white shadow-lg shadow-cyan-500/25 hover:text-black'
-                            : ''
-                        }`}
-                        onClick={() => setIsMobileMenuOpen(false)}
-                      >
-                        {translate(language, item.labelKey)}
-                      </Link>
-                    </motion.div>
-                  ))}
+                  {visibleNavItems.map((item) => {
+                    const active = isNavItemActive(pathname, item.href);
+                    return (
+                      <motion.div key={item.name} variants={mobileItemVariants}>
+                        <Link
+                          href={item.href as any}
+                          aria-current={active ? 'page' : undefined}
+                          className={`block rounded-lg border px-4 py-3 font-medium transition-all duration-300 ${
+                            active
+                              ? 'animate-pulse border-primary/60 bg-primary/10 text-primary shadow-lg shadow-primary/40'
+                              : 'border-transparent text-foreground hover:bg-muted'
+                          }`}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          {translate(language, item.labelKey)}
+                        </Link>
+                      </motion.div>
+                    );
+                  })}
                 </div>
 
                 <motion.div
@@ -517,10 +545,17 @@ export default function Header2() {
                     <div className="space-y-3">
                       <LanguageSelector />
                       <div className="rounded-lg border p-3 text-sm">
-                        <p><span className="text-muted-foreground">Name:</span> {signedInUser.name || '-'}</p>
-                        <p className="wrap-break-word"><span className="text-muted-foreground">Email:</span> {signedInUser.email || '-'}</p>
-                        <p><span className="text-muted-foreground">Phone:</span> {signedInUser.phone || '-'}</p>
+                        <p><span className="text-muted-foreground">{translate(language, 'profile.name')}</span> {signedInUser.name || '-'}</p>
+                        <p className="wrap-break-word"><span className="text-muted-foreground">{translate(language, 'profile.email')}</span> {signedInUser.email || '-'}</p>
+                        <p><span className="text-muted-foreground">{translate(language, 'profile.phone')}</span> {signedInUser.phone || '-'}</p>
                       </div>
+                      <Link
+                        href="/personalized"
+                        className="bg-primary text-primary-foreground block w-full rounded-lg py-3 text-center font-medium"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        {getSiteTranslation(language, 'Personalized for You')}
+                      </Link>
                       <Link
                         href="/profile"
                         className="bg-muted text-foreground block w-full rounded-lg py-3 text-center font-medium"
@@ -543,7 +578,7 @@ export default function Header2() {
                           className="bg-muted text-foreground block w-full rounded-lg py-3 text-center font-medium"
                           onClick={() => setIsMobileMenuOpen(false)}
                         >
-                          Museum Dashboard
+                          {getSiteTranslation(language, 'Museum Dashboard')}
                         </Link>
                       ) : null}
                       {isController ? (
@@ -552,7 +587,7 @@ export default function Header2() {
                           className="bg-muted text-foreground block w-full rounded-lg py-3 text-center font-medium"
                           onClick={() => setIsMobileMenuOpen(false)}
                         >
-                          Controller Dashboard
+                          {getSiteTranslation(language, 'Controller Dashboard')}
                         </Link>
                       ) : null}
                       <button

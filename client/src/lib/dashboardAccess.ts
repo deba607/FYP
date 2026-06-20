@@ -20,8 +20,6 @@ export function getDashboardLinksForRole(role?: string | null): DashboardLink[] 
     case 'admin':
       return [
         { href: '/admin', label: 'Admin Dashboard' },
-        { href: '/museum-dashboard', label: 'Museum Dashboard' },
-        { href: '/controller-dashboard', label: 'Controller Dashboard' },
       ];
     case 'museum':
       return [

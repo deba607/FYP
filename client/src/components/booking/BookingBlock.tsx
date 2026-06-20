@@ -4,12 +4,13 @@ import React, { isValidElement, cloneElement, useEffect, useState } from 'react'
 import { cn } from '../../lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Ticket, MessageCircle, Eye } from 'lucide-react';
+import { Ticket, MessageCircle, Eye, Route } from 'lucide-react';
 
 const bookingCards = [
 	{ to: '/booking/new', title: 'Ticket Booking', desc: 'Purchase tickets for your visit.', icon: <Ticket /> },
 	{ to: '/booking/chat', title: 'Ticket Booking With ChatBot', desc: 'Book tickets with the help of our chatbot.', icon: <MessageCircle />, badge: 'New' },
-	{ to: '/booking/show', title: 'Show Ticket', desc: 'Lookup and view your existing booking by ID.', icon: <Eye /> }
+	{ to: '/booking/directions', title: 'Museum Directions', desc: 'Get step-by-step directions from your current location to the museum.', icon: <Route /> },
+	{ to: '/booking/show', title: 'Show Tickets', desc: 'View all tickets associated with your signed-in email.', icon: <Eye /> }
 ] as const;
 
 const Card = ({
@@ -75,7 +76,7 @@ export default function BookingBlock() {
 	return (
 		<div className="max-w-4xl justify-center text-center mx-auto py-12 px-4 sm:px-6 lg:px-8 gap-5">
 			{/* <h3 className="mb-6 text-2xl font-semibold">Tickets</h3> */}
-			<div className="grid gap-6 sm:grid-cols-3 sm:gap-8 md:gap-12 lg:gap-16 items-stretch">
+			<div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 items-stretch">
 				{bookingCards.map((card) => (
 					<Card
 						key={card.to}

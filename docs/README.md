@@ -12,6 +12,10 @@ This folder documents the main sections of the Bharat Museum Tickets codebase.
 - [Chatbot Engine](./06-chatbot-engine.md)
 - [IoT Section](./07-iot-section.md)
 - [Data and Scripts](./08-data-and-scripts.md)
+- [Personalized Experience Feature Specification](./18-personalized-experience-feature-specification.md)
+- [Crowd Management Insights Feature](./19-crowd-management-insights-feature.md)
+- [Continue Exploring and Nearby Museums Plan](./20-continue-exploring-nearby-museums-plan.md)
+- [Continue Exploring and Nearby Museums Plan](./20-continue-exploring-nearby-museums-plan.md)
 
 ## Main Modules
 
@@ -19,4 +23,3 @@ This folder documents the main sections of the Bharat Museum Tickets codebase.
 - `chatbot-engine/`: Flask chatbot service with ChatterBot, CSV museum data, booking flow handling, and intent classification.
 - `iot/`: Raspberry Pi and ESP32 ticket validation device code.
 - Root Firebase files: Firebase hosting/config, Firestore rules, indexes, and setup/deployment guides.
-

@@ -30,6 +30,7 @@ import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../
 import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
+import CrowdInsightsPanel from '../../components/crowd/CrowdInsightsPanel';
 
 type ControllerDevice = {
   id: string;
@@ -186,7 +187,7 @@ export default function MuseumDashboardPage() {
   // Search/Filter State
   const [searchQuery, setSearchQuery] = useState('');
 
-  const isAuthorized = user?.role === 'admin' || user?.role === 'museum';
+  const isAuthorized = user?.role === 'museum';
   const signedInEmail = user?.email?.trim().toLowerCase() || '';
   const currentMuseum = useMemo(() => {
     if (!signedInEmail) return null;
@@ -369,7 +370,7 @@ export default function MuseumDashboardPage() {
       setError('Device name cannot be blank.');
       return;
     }
-    const controllerMuseumId = currentMuseum?.museum_id || (!shouldRestrictToCurrentMuseum ? museums[0]?.museum_id : '');
+    const controllerMuseumId = currentMuseum?.museum_id || currentMuseum?.id || (!shouldRestrictToCurrentMuseum ? (museums[0]?.museum_id || museums[0]?.id) : '');
     if (!controllerMuseumId) {
       setError('A museum profile is required before registering a controller gate.');
       return;
@@ -445,9 +446,14 @@ export default function MuseumDashboardPage() {
   };
 
   const scopedControllers = useMemo(() => {
-    return shouldRestrictToCurrentMuseum
-      ? controllers.filter((controller) => controller.museumId === currentMuseum?.museum_id || controller.museumId === currentMuseum?.id)
-      : controllers;
+    if (!shouldRestrictToCurrentMuseum) return controllers;
+    if (!currentMuseum) return [];
+    const museumIds = new Set(
+      [currentMuseum.museum_id, currentMuseum.id]
+        .filter(Boolean)
+        .map((id) => id.trim().toLowerCase())
+    );
+    return controllers.filter((controller) => museumIds.has(controller.museumId.trim().toLowerCase()));
   }, [controllers, currentMuseum, shouldRestrictToCurrentMuseum]);
 
   const scopedScanLogs = useMemo(() => {
@@ -792,7 +798,7 @@ export default function MuseumDashboardPage() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">Access Restricted</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              You must be logged in as a Museum Administrator or Super Admin to access this dashboard.
+              You must be logged in with a registered museum account to access this dashboard.
             </p>
             <div className="mt-5 flex gap-3">
               <Link href="/login" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/95">
@@ -863,6 +869,17 @@ export default function MuseumDashboardPage() {
               <AlertCircle className="h-5 w-5 shrink-0" />
               <span>No Firestore museum is linked with {signedInEmail || 'this account'}. Add this email to the museum document `loginEmail` field to show its bookings and visitors.</span>
             </div>
+          )}
+
+          {(!shouldRestrictToCurrentMuseum || currentMuseum) && (
+            <CrowdInsightsPanel
+              museumId={shouldRestrictToCurrentMuseum ? (currentMuseum?.museum_id || currentMuseum?.id) : undefined}
+              title="Museum Crowd Management"
+              description="Monitor current occupancy, daily flow, peak attendance, and safety thresholds."
+              canConfigure
+              showDetails
+              className="mb-6"
+            />
           )}
 
           <AnimatePresence>

@@ -2,6 +2,7 @@ import { getFirebaseFirestore, getFirebaseRealtimeDatabase } from '../config/fir
 import { ApiError } from '../utils/errors';
 import { sendBookingConfirmationEmail } from './emailService';
 import { logUserActivity } from './activityService';
+import { getCustomMuseums } from './museumService';
 
 const TICKET_PRICES = {
   Adult: 200,
@@ -253,12 +254,8 @@ function museumPriceCandidates(museum: Record<string, any>) {
 
 async function loadMuseumRecordsForEnrichment() {
   try {
-    const firestore = getFirebaseFirestore();
-    const snapshot = await firestore.collection('museums').get();
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Record<string, any>[];
+    const result = await getCustomMuseums();
+    return result.museums;
   } catch (error) {
     console.error('Failed to load museums for booking enrichment:', error);
     return [];
@@ -399,6 +396,12 @@ export async function createBooking(input: CreateBookingInput & MuseumInfo & Par
     updates[`bookingsByUser/${payload.userId}/${bookingId}`] = payload;
   }
   await database.ref().update(updates);
+
+  // Keep a Firestore booking mirror for the shared personalization engine.
+  // RTDB remains available to the existing ticket and QR flow during migration.
+  await firestore.collection('bookings').doc(bookingId).set(payload).catch((error) => {
+    console.error('Failed to mirror booking to Firestore personalization data:', error);
+  });
 
   void logUserActivity(payload.userId, payload.email, 'Booking', 'booking_created', `Booking ${bookingId} created for ${payload.museumName || 'Bharat Museum'} on ${payload.visitDate} (${payload.timeSlot})`);
 
@@ -599,6 +602,13 @@ export async function updateBookingStatus(id: string, status: 'pending' | 'confi
 
   await database.ref().update(updates);
 
+  await getFirebaseFirestore().collection('bookings').doc(id).set({
+    status,
+    updatedAt: now.toISOString()
+  }, { merge: true }).catch((error) => {
+    console.error('Failed to update Firestore booking mirror:', error);
+  });
+
   const updatedSnap = await bookingRef.once('value');
   const booking = await enrichBookingWithMuseumInfo(toBookingResponse(id, updatedSnap.val()));
   void logUserActivity(booking.userId, booking.email, 'Booking', 'booking_updated', `Booking status for ${booking.bookingId} updated to ${status}`);
@@ -629,6 +639,10 @@ export async function deleteBooking(id: string) {
   }
 
   await database.ref().update(updates);
+
+  await getFirebaseFirestore().collection('bookings').doc(id).delete().catch((error) => {
+    console.error('Failed to delete Firestore booking mirror:', error);
+  });
 
   return {
     success: true,

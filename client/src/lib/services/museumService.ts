@@ -20,8 +20,10 @@ export type MuseumRecord = {
   category: string;
   price: number; // Base price (compatible with older schemas)
   prices: VisitorPrices; // Category-specific prices
+  capacity?: number; // Added capacity
   description?: string;
   imageUrl?: string;
+  virtualTourUrl?: string;
   loginEmail?: string;
   createdAt: string;
   updatedAt?: string;
@@ -181,6 +183,7 @@ export async function registerMuseum(input: {
     });
   }
 
+  cachedMuseums = null;
   return {
     success: true,
     message: 'Museum and user account registered successfully',
@@ -301,6 +304,7 @@ export async function updateMuseum(id: string, input: {
 
   await docRef.update(payload);
 
+  cachedMuseums = null;
   return {
     success: true,
     message: 'Museum and credentials updated successfully',
@@ -313,7 +317,16 @@ export async function updateMuseum(id: string, input: {
   };
 }
 
+let cachedMuseums: MuseumRecord[] | null = null;
+
 export async function getCustomMuseums() {
+  if (cachedMuseums) {
+    return {
+      success: true,
+      museums: cachedMuseums
+    };
+  }
+
   const firestore = getFirebaseFirestore();
   const snapshot = await firestore.collection('museums').orderBy('createdAt', 'desc').get();
 
@@ -338,13 +351,17 @@ export async function getCustomMuseums() {
       category: String(data.category || ''),
       price: basePrice,
       prices,
+      capacity: data.capacity ? Number(data.capacity) : undefined,
       description: data.description ? String(data.description) : undefined,
       imageUrl: data.imageUrl ? String(data.imageUrl) : undefined,
+      virtualTourUrl: data.virtualTourUrl ? String(data.virtualTourUrl) : undefined,
       loginEmail: data.loginEmail ? String(data.loginEmail) : undefined,
       createdAt: toDateString(data.createdAt),
       updatedAt: data.updatedAt ? toDateString(data.updatedAt) : undefined
     };
   });
+
+  cachedMuseums = museums;
 
   return {
     success: true,
@@ -383,6 +400,7 @@ export async function deleteCustomMuseum(id: string) {
     }
   }
 
+  cachedMuseums = null;
   return {
     success: true,
     message: 'Museum and user account deleted successfully'

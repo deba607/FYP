@@ -6,7 +6,7 @@ import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { buttonVariants } from '../ui/button';
 import { cn } from '../../lib/utils';
-import { createRazorpayOrder, verifyRazorpayPayment } from '../../lib/api';
+import { createRazorpayOrder, verifyRazorpayPayment, trackPersonalizationActivity } from '../../lib/api';
 import type { BookingResponse } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { User, Mail, Phone, Calendar, Clock, Users, Search, MapPin, Plus, Minus } from 'lucide-react';
@@ -14,6 +14,8 @@ import Listbox from '../ui/listbox';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 import { buildTicketQrPayload } from '../../lib/ticketQr';
+import MuseumDirections from '../navigation/MuseumDirections';
+import { getMuseumsForClient } from '../../lib/clientMuseums';
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
 type MuseumOption = {
@@ -439,20 +441,21 @@ function BookTicket() {
   // Fetch the booking catalog from Firestore via the museums API.
   React.useEffect(() => {
     let mounted = true;
-    fetch('/api/museums')
-      .then((r) => {
-        if (!r.ok) throw new Error('No museums API');
-        return r.json();
-      })
-      .then((payload) => {
+
+    getMuseumsForClient()
+      .then(({ museums: data }) => {
         if (!mounted) return;
-        const data = payload?.museums;
         if (Array.isArray(data) && data.length > 0) {
           const dedupedData = data.filter((museum: any, index: number, self: any[]) =>
             index === self.findIndex((entry) => entry.museum_id === museum.museum_id)
           );
           setMuseums(dedupedData);
-          setSelectedMuseumId((prev) => dedupedData.find((m: any) => m.museum_id === prev)?.museum_id || dedupedData[0].museum_id);
+          const requestedMuseum = new URLSearchParams(window.location.search).get('museum');
+          setSelectedMuseumId((prev) =>
+            dedupedData.find((m: any) => m.museum_id === requestedMuseum)?.museum_id ||
+            dedupedData.find((m: any) => m.museum_id === prev)?.museum_id ||
+            dedupedData[0].museum_id
+          );
         } else {
           setMuseums([]);
           setSelectedMuseumId('');
@@ -460,12 +463,26 @@ function BookTicket() {
         }
       })
       .catch(() => {
+        if (!mounted) return;
         setMuseums([]);
         setSelectedMuseumId('');
         setMuseumQuery('');
       });
-    return () => { mounted = false };
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  // Track viewed activity when selectedMuseumId changes
+  useEffect(() => {
+    if (selectedMuseumId) {
+      getCurrentIdToken().then((token) => {
+        if (token) {
+          void trackPersonalizationActivity(token, { type: 'viewed', museumId: selectedMuseumId }).catch(() => {});
+        }
+      });
+    }
+  }, [selectedMuseumId]);
 
   return (
     <div className="max-w-3xl mx-auto rounded-lg bg-background p-6 shadow-sm">
@@ -518,6 +535,18 @@ function BookTicket() {
             />
             <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
           </div>
+          {success.booking.museumName && success.booking.museumLocation ? (
+            <MuseumDirections
+              museum={{
+                museum_id: success.booking.museumId || undefined,
+                name: success.booking.museumName,
+                location: success.booking.museumLocation,
+                category: success.booking.museumCategory || undefined
+              }}
+              compact
+              className="mt-4 border-green-200 bg-white text-slate-900"
+            />
+          ) : null}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -597,6 +626,10 @@ function BookTicket() {
               </div>
             )}
           </div>
+
+          {selectedMuseum ? (
+            <MuseumDirections museum={selectedMuseum} compact className="border-primary/20 bg-primary/5" />
+          ) : null}
 
           {/* Visitor Info (Gender, Age, Location) */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

@@ -67,6 +67,63 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Private personalization profile: one document per Firebase UID.
+    match /preferences/{userId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // User-owned personalization signals.
+    match /favorites/{favoriteId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    match /searchHistory/{historyId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    match /visitedMuseums/{visitId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Server-generated per-user cache. Clients can read only their own cache.
+    match /recommendedMuseums/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Public discovery and aggregate datasets; only administrators publish them.
+    match /museumCategories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /museumRatings/{ratingId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /museumVisits/{visitId} {
+      allow read: if true;
+      allow write: if isAdmin() || hasRole('museum') || hasRole('controller');
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isAdmin() || hasRole('museum');
+    }
+
+    match /exhibitions/{exhibitionId} {
+      allow read: if true;
+      allow write: if isAdmin() || hasRole('museum');
+    }
+
     // Controllers: read for all authenticated users, write for admin/museum managers
     match /controllers/{controllerId} {
       allow read: if request.auth != null;

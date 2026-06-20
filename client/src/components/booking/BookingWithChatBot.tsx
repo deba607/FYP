@@ -3,15 +3,22 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users } from 'lucide-react';
+import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users, Route, Sparkles, Mic, MicOff } from 'lucide-react';
 import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment, getMyTicketHistory } from '../../lib/api';
+import { resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment, getMyTicketHistory, getPersonalizedRecommendations, savePersonalizationPreferences, updateMuseumFavorite, trackPersonalizationActivity } from '../../lib/api';
 import type { TicketHistoryItem } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 import { buildTicketQrPayload, type TicketQrBooking } from '../../lib/ticketQr';
+import MuseumDirections from '../navigation/MuseumDirections';
+import { useAccessibility } from '../../context/AccessibilityContext';
+import type { DirectionMuseum } from '../../lib/directions';
+import { getMuseumsForClient } from '../../lib/clientMuseums';
+import type { RecommendedMuseum } from '../../lib/recommendations';
+import RecommendationCard from '../personalized/RecommendationCard';
+import { findNearbyMuseums, getCurrentCoordinates } from '../../lib/nearbyMuseums';
 
 type ChatMessage = {
   from: 'user' | 'bot';
@@ -26,6 +33,9 @@ type ChatMessage = {
   qrBookingId?: string;
   bookingCard?: Partial<TicketHistoryItem>;
   ticketCards?: TicketCard[];
+  directionsMuseum?: DirectionMuseum;
+  directionsOptions?: DirectionMuseum[];
+  recommendationMuseums?: RecommendedMuseum[];
 };
 
 type MuseumOption = {
@@ -840,9 +850,7 @@ async function resolveBookingMuseumDetails(data: BookingData): Promise<Partial<B
   }
 
   try {
-    const response = await fetch('/api/museums');
-    const payload = await response.json().catch(() => ({}));
-    const museums = Array.isArray(payload?.museums) ? payload.museums as MuseumApiItem[] : [];
+    const { museums } = await getMuseumsForClient();
     const wantedId = normalizeMuseumText(current.museumId);
     const wantedName = normalizeMuseumText(current.museumName);
 
@@ -860,7 +868,7 @@ async function resolveBookingMuseumDetails(data: BookingData): Promise<Partial<B
       return current;
     }
 
-    const prices = museum.prices || {};
+    const prices = (museum.prices || {}) as Record<string, number>;
     return {
       museumName: current.museumName || museum.name || '',
       museumLocation: current.museumLocation || museum.location || '',
@@ -958,8 +966,56 @@ function gateActionLabel(action: TicketHistoryItem['gateAction']) {
   return 'Not scanned yet';
 }
 
+function isDirectionsIntent(text: string) {
+  const lower = text.toLowerCase();
+  return ['direction', 'directions', 'route', 'navigate', 'navigation', 'reach', 'map', 'how to get', 'way to', 'drive', 'walk', 'train', 'transit', 'cycle'].some((keyword) =>
+    lower.includes(keyword)
+  );
+}
+
+function isRecommendationIntent(text: string) {
+  const lower = text.toLowerCase();
+  return [
+    'recommend', 'suggest a museum', 'suggest museum', 'what should i visit',
+    'where should i go', 'plan my museum trip', 'personalized', 'for me', 'i like '
+  ].some((phrase) => lower.includes(phrase));
+}
+
+function isNearbyMuseumIntent(text: string) {
+  const lower = text.toLowerCase();
+  return [
+    'museum near me', 'museums near me', 'nearby museum', 'nearby museums',
+    'nearest museum', 'nearest museums', 'closest museum', 'closest museums',
+    'museum close to me', 'museums close to me'
+  ].some((phrase) => lower.includes(phrase));
+}
+
+function cleanDirectionsQuery(text: string) {
+  return text
+    .replace(/\b(?:by|via)\s+(?:car|driving|walking|cycle|cycling|train|rail|transit|bus)\b/gi, ' ')
+    .replace(/\b(?:driving|walking|cycling|train|rail|transit|bus)\s+(?:directions?|route)\b/gi, ' ')
+    .replace(/\b(how|do|i|get|show|open|give|me|the|a|an|to|for|from|my|current|location|directions?|route|navigate|navigation|reach|map|museum|by|via|drive|driving|walk|walking|cycle|cycling)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toDirectionMuseum(data: Partial<BookingData>): DirectionMuseum | null {
+  const name = data.museumName || data.museum_name || '';
+  const location = data.museumLocation || data.museum_location || '';
+
+  if (!name && !location) return null;
+
+  return {
+    museum_id: data.museumId || data.museum_id,
+    name: name || 'Selected Museum',
+    location: location || '',
+    category: data.museumCategory || data.museum_category
+  };
+}
+
 export default function BookingWithChatBot() {
   const { language } = useLanguage();
+  const { config, speak, startVoiceListening, stopVoiceListening, listening } = useAccessibility();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -972,7 +1028,6 @@ export default function BookingWithChatBot() {
   const [phone, setPhone] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -983,6 +1038,15 @@ export default function BookingWithChatBot() {
       });
     }
   }, [messages, sending]);
+
+  // Automatically speak the last message from the bot if voice is enabled
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.from === 'bot' && config.voiceEnabled && config.autoReadChatbot) {
+      speak(lastMessage.text);
+    }
+  }, [messages, config.voiceEnabled, config.autoReadChatbot, speak]);
 
   const canConfirm = useMemo(() => {
     const hasVisitorInfo = Boolean(
@@ -1160,6 +1224,268 @@ export default function BookingWithChatBot() {
     }
   };
 
+  const resolveDirectionsRequest = async (query?: string): Promise<{
+    museum: DirectionMuseum | null;
+    options: DirectionMuseum[];
+  }> => {
+    const currentMuseum = toDirectionMuseum(bookingData);
+    const cleanedQuery = cleanDirectionsQuery(query || '');
+    const wanted = normalizeMuseumText(cleanedQuery);
+
+    if (!wanted && currentMuseum?.name && currentMuseum.location) {
+      return { museum: currentMuseum, options: [] };
+    }
+
+    const { museums } = await getMuseumsForClient();
+    const options: DirectionMuseum[] = museums
+      .filter((museum) => Boolean(museum.name && museum.location))
+      .map((museum) => ({
+        museum_id: museum.museum_id || museum.id,
+        name: museum.name,
+        location: museum.location,
+        state: museum.state,
+        category: museum.category
+      }));
+
+    const currentId = normalizeMuseumText(currentMuseum?.museum_id);
+    const currentName = normalizeMuseumText(currentMuseum?.name);
+    const match = options.find((museum) => {
+      const id = normalizeMuseumText(museum.museum_id);
+      const name = normalizeMuseumText(museum.name);
+      const location = normalizeMuseumText(museum.location);
+      const state = normalizeMuseumText(museum.state);
+      const category = normalizeMuseumText(museum.category);
+
+      return (
+        (wanted && (name.includes(wanted) || wanted.includes(name) || location.includes(wanted) || state.includes(wanted) || category.includes(wanted))) ||
+        (!wanted && currentId && id === currentId) ||
+        (!wanted && currentName && name === currentName)
+      );
+    });
+
+    if (match) {
+      return { museum: match, options: [] };
+    }
+
+    return {
+      museum: !wanted && currentMuseum?.location ? currentMuseum : null,
+      options
+    };
+  };
+
+  const appendDirectionsMessage = async (query?: string) => {
+    const { museum, options } = await resolveDirectionsRequest(query);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: 'bot',
+        text: museum
+          ? `Here is the embedded route guide for ${museum.name}. Choose your starting point and travel mode below.`
+          : options.length
+            ? 'Choose a museum below to open its embedded route guide.'
+            : 'No museums with a valid location are available right now.',
+        timestamp: new Date().toLocaleTimeString(),
+        directionsMuseum: museum || undefined,
+        directionsOptions: museum ? undefined : options
+      }
+    ]);
+  };
+
+  const showDirectionsForMuseum = async (museumName?: string, museum?: DirectionMuseum) => {
+    if (sending || confirming) return;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: 'user',
+        text: museumName ? `Get directions to ${museumName}` : 'Get directions',
+        timestamp: new Date().toLocaleTimeString()
+      }
+    ]);
+    setSending(true);
+
+    try {
+      if (museum) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            text: `Here is the embedded route guide for ${museum.name}. Choose your starting point and travel mode below.`,
+            timestamp: new Date().toLocaleTimeString(),
+            directionsMuseum: museum
+          }
+        ]);
+        return;
+      }
+
+      await appendDirectionsMessage(museumName);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: 'bot',
+          text: 'Unable to load directions right now. Please try again.',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const showPersonalizedRecommendations = async (
+    prompt = 'Recommend museums for me',
+    forcedCategory?: string
+  ) => {
+    if (sending || confirming) return;
+    setMessages((prev) => [...prev, {
+      from: 'user',
+      text: prompt,
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+    setSending(true);
+
+    try {
+      const token = await getCurrentIdToken();
+      if (!token) {
+        setMessages((prev) => [...prev, {
+          from: 'bot',
+          text: 'Please sign in first so I can use your private preferences, favorites, and booking history safely.',
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+        return;
+      }
+
+      let recommendations = await getPersonalizedRecommendations(token);
+      const lowerPrompt = prompt.toLowerCase();
+      const availableCategories = Array.from(new Set(
+        recommendations.sections.recommended.map((museum) => museum.category).filter(Boolean)
+      ));
+      const inferredCategory = forcedCategory || availableCategories.find((category) => {
+        const categoryText = category.toLowerCase();
+        return lowerPrompt.includes(categoryText) || categoryText.split(/[^a-z0-9]+/).some((word) => word.length > 3 && lowerPrompt.includes(word));
+      });
+
+      if ((forcedCategory || /\bi like\b/i.test(prompt)) && inferredCategory) {
+        const favoriteCategories = Array.from(new Set([
+          ...recommendations.preferences.favoriteCategories,
+          inferredCategory
+        ]));
+        await savePersonalizationPreferences(token, {
+          ...recommendations.preferences,
+          favoriteCategories
+        });
+        recommendations = await getPersonalizedRecommendations(token, true);
+      }
+
+      const museums = recommendations.sections.recommended.slice(0, 4);
+      const isTripPlan = /plan my museum trip|itinerary/i.test(prompt);
+      const itinerary = isTripPlan
+        ? museums.slice(0, 3).map((museum, index) => `${['09:30', '13:00', '16:00'][index]} — ${museum.name}`).join('\n')
+        : '';
+      const preferenceNote = inferredCategory && (forcedCategory || /\bi like\b/i.test(prompt))
+        ? ` I saved ${inferredCategory} as one of your interests.`
+        : '';
+
+      setMessages((prev) => [...prev, {
+        from: 'bot',
+        text: museums.length
+          ? isTripPlan
+            ? `Here is a personalized starting itinerary:\n\n${itinerary}\n\nOpen any card to book tickets or navigate.${preferenceNote}`
+            : `Based on your interests and recent activity, these are your strongest matches.${preferenceNote}`
+          : 'I could not find any live museums to recommend right now.',
+        timestamp: new Date().toLocaleTimeString(),
+        recommendationMuseums: museums
+      }]);
+    } catch (recommendationError) {
+      setMessages((prev) => [...prev, {
+        from: 'bot',
+        text: recommendationError instanceof Error ? recommendationError.message : 'I could not load personalized recommendations right now.',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const showNearbyMuseums = async (prompt: string) => {
+    if (sending || confirming) return;
+    setMessages((prev) => [...prev, {
+      from: 'user',
+      text: prompt,
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+    setInput('');
+    setSending(true);
+
+    try {
+      const [origin, catalog] = await Promise.all([
+        getCurrentCoordinates(),
+        getMuseumsForClient()
+      ]);
+      const nearby = await findNearbyMuseums(origin, catalog.museums, 4);
+      const recommendations: RecommendedMuseum[] = nearby.map((museum, index) => ({
+        ...museum,
+        confidence: Math.max(70, 98 - index * 5),
+        score: Math.max(0, 100 - museum.distanceKm),
+        reason: `${museum.distanceKm < 1 ? `${Math.round(museum.distanceKm * 1000)} m` : `${museum.distanceKm.toFixed(1)} km`} from your current location (${museum.distanceAccuracy === 'approximate' ? 'approximate city-level' : 'straight-line'} distance).`,
+        reasons: ['Near your current location'],
+        rating: null,
+        ratingCount: 0,
+        crowdLevel: 'Unknown',
+        trendScore: 0,
+        isFavorite: false
+      }));
+
+      setMessages((prev) => [...prev, {
+        from: 'bot',
+        text: recommendations.length
+          ? 'These are the closest museums I found from your current GPS location, ordered by distance.'
+          : 'I found the museum catalog, but could not determine coordinates for its locations.',
+        timestamp: new Date().toLocaleTimeString(),
+        recommendationMuseums: recommendations
+      }]);
+    } catch (error) {
+      setMessages((prev) => [...prev, {
+        from: 'bot',
+        text: error instanceof Error ? error.message : 'I could not find nearby museums right now.',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const toggleChatRecommendationFavorite = async (museum: RecommendedMuseum) => {
+    const token = await getCurrentIdToken();
+    if (!token) return;
+    const museumId = museum.museum_id || museum.id;
+    const next = !museum.isFavorite;
+    setMessages((current) => current.map((message) => ({
+      ...message,
+      recommendationMuseums: message.recommendationMuseums?.map((item) =>
+        (item.museum_id || item.id) === museumId ? { ...item, isFavorite: next } : item
+      )
+    })));
+    try {
+      await updateMuseumFavorite(token, museumId, next);
+    } catch {
+      setMessages((current) => current.map((message) => ({
+        ...message,
+        recommendationMuseums: message.recommendationMuseums?.map((item) =>
+          (item.museum_id || item.id) === museumId ? { ...item, isFavorite: !next } : item
+        )
+      })));
+    }
+  };
+
+  const trackChatRecommendationView = (museum: RecommendedMuseum) => {
+    void getCurrentIdToken().then((token) => {
+      if (token) void trackPersonalizationActivity(token, { type: 'viewed', museumId: museum.museum_id || museum.id });
+    });
+  };
+
   const sendMessage = async (displayText: string, apiText = displayText) => {
     if (!displayText.trim() || !sessionId) return;
 
@@ -1218,8 +1544,70 @@ export default function BookingWithChatBot() {
     }
   };
 
+  const processAndSend = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    if (isNearbyMuseumIntent(trimmed)) {
+      await showNearbyMuseums(trimmed);
+      return;
+    }
+
+    if (isRecommendationIntent(trimmed)) {
+      setInput('');
+      await showPersonalizedRecommendations(trimmed);
+      return;
+    }
+
+    if (isDirectionsIntent(trimmed)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: 'user',
+          text: trimmed,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+      setInput('');
+      setSending(true);
+
+      try {
+        await appendDirectionsMessage(trimmed);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: 'bot',
+            text: 'Unable to load directions right now. Please try again.',
+            timestamp: new Date().toLocaleTimeString()
+          }
+        ]);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    await sendMessage(trimmed);
+  };
+
   const send = async () => {
-    await sendMessage(input.trim());
+    const text = input;
+    setInput('');
+    await processAndSend(text);
+  };
+
+  const toggleListening = () => {
+    if (listening) {
+      stopVoiceListening();
+    } else {
+      startVoiceListening(async (transcript) => {
+        if (transcript.trim()) {
+          setInput(transcript);
+          await processAndSend(transcript);
+        }
+      });
+    }
   };
 
   const chooseMuseum = (museumName: string) => {
@@ -1549,34 +1937,55 @@ export default function BookingWithChatBot() {
   return (
     <div className="mx-auto w-full max-w-4xl">
       <aside className="rounded-lg border bg-background p-4">
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <MessageCircle />
           <h4 className="text-lg font-medium">{translate(language, 'chat.title')}</h4>
-          <button
-            type="button"
-            className="ml-auto inline-flex items-center gap-1 rounded border px-2 py-1 text-xs"
-            onClick={showMyTickets}
-            disabled={sending || confirming}
-          >
-            <Ticket className="h-3 w-3" />
-            My Tickets
-          </button>
-          <button
-            type="button"
-            className="rounded border px-2 py-1 text-xs"
-            onClick={reset}
-            disabled={sending || confirming}
-          >
-            <span className="inline-flex items-center gap-1">
-              <RotateCcw className="h-3 w-3" />
-              {translate(language, 'chat.reset')}
-            </span>
-          </button>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90"
+              onClick={() => showPersonalizedRecommendations()}
+              disabled={sending || confirming}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              For You
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded border px-2.5 py-1.5 text-xs font-medium transition hover:bg-muted"
+              onClick={() => showDirectionsForMuseum()}
+              disabled={sending || confirming}
+            >
+              <Route className="h-3.5 w-3.5" />
+              Directions
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded border px-2.5 py-1.5 text-xs transition hover:bg-muted"
+              onClick={showMyTickets}
+              disabled={sending || confirming}
+            >
+              <Ticket className="h-3 w-3" />
+              My Tickets
+            </button>
+            <button
+              type="button"
+              className="rounded border px-2.5 py-1.5 text-xs transition hover:bg-muted"
+              onClick={reset}
+              disabled={sending || confirming}
+              aria-label={translate(language, 'chat.reset')}
+            >
+              <span className="inline-flex items-center gap-1">
+                <RotateCcw className="h-3 w-3" />
+                {translate(language, 'chat.reset')}
+              </span>
+            </button>
+          </div>
         </div>
 
-        <div ref={chatContainerRef} className="mb-3 h-105 overflow-auto rounded border p-3">
+        <div ref={chatContainerRef} className="mb-3 h-[70vh] min-h-[520px] max-h-[820px] overflow-auto rounded border p-3">
           {messages.map((m, i) => (
-            <div key={i} className={`mb-2 max-w-[85%] ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
+            <div key={i} className={`mb-2 ${m.directionsMuseum || m.directionsOptions || m.recommendationMuseums ? 'w-full max-w-full' : 'max-w-[85%]'} ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
               <div className={`inline-block whitespace-pre-line rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
                 {m.text}
               </div>
@@ -1629,6 +2038,21 @@ export default function BookingWithChatBot() {
                         </span>
                       </div>
 
+                      <button
+                        type="button"
+                        onClick={() => showDirectionsForMuseum(ticket.museumName || '', {
+                          museum_id: ticket.museumId || undefined,
+                          name: ticket.museumName || 'Museum',
+                          location: ticket.museumLocation || '',
+                          category: ticket.museumCategory || undefined
+                        })}
+                        disabled={sending || confirming || !ticket.museumLocation}
+                        className="mt-3 inline-flex items-center gap-2 rounded border px-3 py-2 text-xs font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Route className="h-3.5 w-3.5" />
+                        Directions to Museum
+                      </button>
+
                       <div className="mt-3 grid gap-3 sm:grid-cols-[150px_1fr]">
                         <div className="rounded-md border bg-white p-2 text-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1671,6 +2095,20 @@ export default function BookingWithChatBot() {
                         </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+              {m.recommendationMuseums && m.recommendationMuseums.length > 0 && (
+                <div className="mt-3 grid gap-3 text-left sm:grid-cols-2">
+                  {m.recommendationMuseums.map((museum) => (
+                    <RecommendationCard
+                      key={museum.museum_id || museum.id}
+                      museum={museum}
+                      compact
+                      onFavorite={toggleChatRecommendationFavorite}
+                      onView={trackChatRecommendationView}
+                      onMoreLike={(selected) => showPersonalizedRecommendations(`Show me more like ${selected.name}`, selected.category)}
+                    />
                   ))}
                 </div>
               )}
@@ -1717,7 +2155,7 @@ export default function BookingWithChatBot() {
                 </div>
               )}
               {m.bookMuseumName && (
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
@@ -1727,6 +2165,47 @@ export default function BookingWithChatBot() {
                     <Ticket className="h-3.5 w-3.5" />
                     Book Tickets
                   </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded border px-3 py-2 text-xs font-medium transition hover:bg-muted disabled:opacity-60"
+                    onClick={() => showDirectionsForMuseum(m.bookMuseumName!)}
+                    disabled={sending || confirming}
+                  >
+                    <Route className="h-3.5 w-3.5" />
+                    Directions
+                  </button>
+                </div>
+              )}
+              {m.directionsOptions && m.directionsOptions.length > 0 && (
+                <div className="mt-2 w-full rounded-lg border bg-background p-3 text-left text-foreground shadow-sm">
+                  <label className="text-xs font-semibold" htmlFor={`directions-museum-${i}`}>
+                    Museum destination
+                  </label>
+                  <select
+                    id={`directions-museum-${i}`}
+                    className="mt-2 w-full rounded border border-input bg-background px-3 py-2.5 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    defaultValue=""
+                    onChange={(event) => {
+                      const selected = m.directionsOptions?.[Number(event.target.value)];
+                      if (selected) showDirectionsForMuseum(selected.name, selected);
+                    }}
+                    disabled={sending || confirming}
+                  >
+                    <option value="" disabled>Select a museum...</option>
+                    {m.directionsOptions.map((museum, museumIndex) => (
+                      <option key={museum.museum_id || `${museum.name}-${museum.location}`} value={museumIndex}>
+                        {museum.name} — {museum.location}{museum.state ? `, ${museum.state}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    You can also type “directions to museum name” in the chat.
+                  </p>
+                </div>
+              )}
+              {m.directionsMuseum && (
+                <div className="mt-2 w-full">
+                  <MuseumDirections museum={m.directionsMuseum} compact />
                 </div>
               )}
               {m.showDatePicker && (
@@ -1822,9 +2301,24 @@ export default function BookingWithChatBot() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !sending && send()}
             placeholder={translate(language, 'chat.placeholder')}
-            className="flex-1 rounded border px-3 py-2"
+            className="flex-1 rounded border px-3 py-2 bg-background text-foreground"
             disabled={sending}
           />
+          {config.speechToText && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`rounded border p-2 transition-all ${
+                listening
+                  ? 'bg-red-500 text-white border-red-500 animate-pulse'
+                  : 'bg-background hover:bg-muted text-muted-foreground'
+              }`}
+              title="Speech to text input"
+              aria-label={listening ? "Stop listening" : "Start voice listening"}
+            >
+              {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </button>
+          )}
           <button onClick={send} className="rounded bg-primary px-4 py-2 text-primary-foreground" disabled={sending}>
             {sending ? translate(language, 'chat.sending') : translate(language, 'chat.send')}
           </button>
@@ -1834,5 +2328,3 @@ export default function BookingWithChatBot() {
     </div>
   );
 }
-
-

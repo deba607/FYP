@@ -3,6 +3,8 @@ import InteractiveTooltip from '../components/mvpblocks/interactive-tooltip';
 import TextRevealLetters from '../components/mvpblocks/text-reveal-1';
 import { Skiper54 } from '../components/ui/skiper-ui/skiper54';
 import BookingBlock from '../components/booking/BookingBlock';
+import PersonalizedHomeLoader from '../components/personalized/PersonalizedHomeLoader';
+import CrowdHomeLoader from '../components/crowd/CrowdHomeLoader';
 
 export default function HomePage() {
   return (
@@ -14,6 +16,8 @@ export default function HomePage() {
         </div>
       </div>
       <BookingBlock />
+      <PersonalizedHomeLoader />
+      <CrowdHomeLoader />
       <Skiper54 />
       <Faq2 />
       <InteractiveTooltip />

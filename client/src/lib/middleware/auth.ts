@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
-import { getFirebaseAuth } from '../config/firebaseAdmin';
+import { getFirebaseAuth, getFirebaseFirestore } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
 
 export type AuthenticatedUser = {
   uid: string;
   email?: string;
   name?: string;
+  role?: string;
 };
 
 export async function requireFirebaseUser(req: NextRequest): Promise<AuthenticatedUser> {
@@ -19,11 +20,18 @@ export async function requireFirebaseUser(req: NextRequest): Promise<Authenticat
 
   try {
     const decoded = await getFirebaseAuth().verifyIdToken(idToken);
+    let role = typeof decoded.role === 'string' ? decoded.role : undefined;
+    if (!role) {
+      const userDocument = await getFirebaseFirestore().collection('users').doc(decoded.uid).get().catch(() => null);
+      const storedRole = userDocument?.exists ? userDocument.data()?.role : undefined;
+      role = typeof storedRole === 'string' ? storedRole : undefined;
+    }
 
     return {
       uid: decoded.uid,
       email: decoded.email,
-      name: decoded.name
+      name: decoded.name,
+      role
     };
   } catch {
     throw new ApiError('Invalid or expired token', 401);

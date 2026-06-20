@@ -5,9 +5,18 @@ import { jsonError, jsonSuccess } from '../../../lib/utils/apiResponse';
 
 export const runtime = 'nodejs';
 
+function withTimeout<T>(promise: Promise<T>, ms: number) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`Museum catalog request timed out after ${ms}ms`)), ms);
+    })
+  ]);
+}
+
 export async function GET() {
   try {
-    const customResult = await getCustomMuseums();
+    const customResult = await withTimeout(getCustomMuseums(), 5000);
     const firestoreMuseums = customResult.museums || [];
     const seenIds = new Set<string>();
     const uniqueMuseums = firestoreMuseums.filter((m) => {
@@ -19,6 +28,7 @@ export async function GET() {
 
     return jsonSuccess({
       success: true,
+      source: 'firestore',
       count: uniqueMuseums.length,
       museums: uniqueMuseums
     }, 200, {

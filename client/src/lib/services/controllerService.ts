@@ -1,5 +1,6 @@
 import { getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { ApiError } from '../utils/errors';
+import { updateCrowdFromGateScan } from './crowdService';
 
 export type ControllerDevice = {
   id: string;
@@ -221,13 +222,21 @@ export async function logScan(
 
   await database.ref().update(updates);
 
+  const crowd = outcome === 'granted' && museumId
+    ? await updateCrowdFromGateScan(museumId, gateAction, deviceId).catch((error) => {
+        console.error('Failed to update crowd insight after granted scan:', error);
+        return null;
+      })
+    : null;
+
   return {
     success: true,
     log: {
       id,
       ...payload,
       scannedAt: now.toISOString()
-    }
+    },
+    crowd
   };
 }
 

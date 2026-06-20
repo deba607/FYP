@@ -1,7 +1,7 @@
 import { getApps, cert, initializeApp, App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase, Database } from 'firebase-admin/database';
-import { Firestore } from '@google-cloud/firestore';
+import { Firestore, getFirestore } from 'firebase-admin/firestore';
 
 let firebaseApp: App | null = null;
 let firestoreInstance: Firestore | null = null;
@@ -50,22 +50,11 @@ export function getFirebaseFirestore() {
   const app = getFirebaseAdminApp();
   const databaseId = process.env.FIREBASE_DATABASE_ID?.trim();
 
-  const options = {
-    projectId: app.options.projectId,
-    credentials: {
-      client_email: process.env.FIREBASE_CLIENT_EMAIL,
-      private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-    }
-  };
-
   // Apply custom database id (for named Firestore databases) when provided.
   if (databaseId && databaseId !== '(default)') {
-    firestoreInstance = new Firestore({
-      ...options,
-      databaseId
-    });
+    firestoreInstance = getFirestore(app, databaseId);
   } else {
-    firestoreInstance = new Firestore(options);
+    firestoreInstance = getFirestore(app);
   }
 
   return firestoreInstance;

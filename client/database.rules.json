@@ -25,6 +25,14 @@
       ".read": "true",
       ".write": "true",
       ".indexOn": ["ticketId", "scannedAt", "deviceId", "museumId"]
+    },
+    "crowdInsights": {
+      ".read": true,
+      ".write": false
+    },
+    "crowdHistory": {
+      ".read": false,
+      ".write": false
     }
   }
 }

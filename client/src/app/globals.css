@@ -121,3 +121,20 @@ body {
   /* font-family: "Instrument Serif", serif; */
 }
 
+/* Accessibility settings overrides */
+html.text-lg-accessibility {
+  font-size: 1.20rem !important;
+}
+
+html.text-lg-accessibility body {
+  font-size: 1.15rem !important;
+}
+
+html.reduce-transitions,
+html.reduce-transitions * {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+

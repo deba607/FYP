@@ -1,221 +1,186 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import QRCode from 'qrcode';
-import { getBookingByBookingId } from '../../lib/api';
+import { onAuthStateChanged } from 'firebase/auth';
+import { Loader2, RefreshCw, Search, Ticket, X } from 'lucide-react';
+import { getMyTicketHistory, type TicketHistoryItem } from '../../lib/api';
+import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
 import { buildTicketQrPayload } from '../../lib/ticketQr';
 
-import { Search } from 'lucide-react';
+const AUTH_USER_KEY = 'museum_auth_user';
 
-type BookingLookupResult = {
-  bookingId: string;
-  name: string;
-  email: string;
-  phone: string;
-  visitDate: string;
-  timeSlot: string;
-  numberOfTickets: number;
-  visitorType: string;
-  totalAmount: number;
-  gender?: string | null;
-  age?: number | null;
-  userLocation?: string | null;
-  museumId?: string | null;
-  museumName?: string | null;
-  museumLocation?: string | null;
-  museumCategory?: string | null;
-  pricePerTicket?: number;
-  status: string;
-  paymentStatus?: string;
-  createdAt: string;
-  purchaseDateTime?: string;
-};
+function storedEmail() {
+  try {
+    const user = JSON.parse(window.localStorage.getItem(AUTH_USER_KEY) || '{}') as { email?: string };
+    return user.email?.trim() || '';
+  } catch {
+    return '';
+  }
+}
+
+function displayDate(value?: string) {
+  if (!value) return '-';
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
 
 export default function ShowTicket() {
-  const [id, setId] = useState('');
-  const [result, setResult] = useState<BookingLookupResult | null>(null);
+  const [email, setEmail] = useState('');
+  const [tickets, setTickets] = useState<TicketHistoryItem[]>([]);
+  const [qrCodes, setQrCodes] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [authReady, setAuthReady] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    let active = true;
+  const filteredTickets = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return tickets;
 
-    if (!result?.bookingId) {
-      setQrDataUrl('');
-      return;
-    }
+    return tickets.filter((ticket) => [
+      ticket.bookingId,
+      ticket.museumName,
+      ticket.museumLocation,
+      ticket.userLocation
+    ].some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [searchQuery, tickets]);
 
-    QRCode.toDataURL(buildTicketQrPayload(result), {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 320,
-      color: {
-        dark: '#111827',
-        light: '#ffffff'
-      }
-    })
-      .then((url) => {
-        if (active) setQrDataUrl(url);
-      })
-      .catch(() => {
-        if (active) setQrDataUrl('');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [result]);
-
-  const lookup = async () => {
-    setError('');
-    setResult(null);
-
-    if (!id.trim()) {
-      setError('Please enter a booking ID.');
+  const loadTickets = async () => {
+    const user = getFirebaseClientAuth().currentUser;
+    if (!user) {
+      setTickets([]);
+      setError('Please sign in to view tickets associated with your email address.');
+      setLoading(false);
       return;
     }
 
     setLoading(true);
-
+    setError('');
     try {
-      const response = await getBookingByBookingId(id.trim());
-      const found = response.booking;
-      setResult({
-        bookingId: found.bookingId,
-        name: found.name,
-        email: found.email,
-        phone: found.phone,
-        visitDate: found.visitDate,
-        timeSlot: found.timeSlot,
-        numberOfTickets: found.numberOfTickets,
-        visitorType: found.visitorType,
-        totalAmount: found.totalAmount,
-        gender: found.gender,
-        age: found.age,
-        userLocation: found.userLocation,
-        museumId: found.museumId,
-        museumName: found.museumName,
-        museumLocation: found.museumLocation,
-        museumCategory: found.museumCategory,
-        pricePerTicket: found.pricePerTicket,
-        status: found.status,
-        paymentStatus: found.paymentStatus,
-        createdAt: found.createdAt,
-        purchaseDateTime: found.purchaseDateTime
-      });
-    } catch (err) {
-      setError((err as Error).message || 'Unable to fetch booking.');
+      const mailId = (user.email || storedEmail()).trim().toLowerCase();
+      const token = await user.getIdToken();
+      const result = await getMyTicketHistory(token, mailId);
+      setEmail(mailId);
+      setTickets(result.tickets);
+
+      const generated = await Promise.all(result.tickets.map(async (ticket) => [
+        ticket.bookingId,
+        await QRCode.toDataURL(buildTicketQrPayload(ticket), {
+          errorCorrectionLevel: 'M', margin: 2, width: 280
+        })
+      ] as const));
+      setQrCodes(Object.fromEntries(generated));
+    } catch (loadError) {
+      setTickets([]);
+      setQrCodes({});
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load your tickets.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-2xl mx-auto w-full px-4">
-       {/* Spacer for fixed header - matches dark header background */}
-            <div className="h-10 bg-white dark:bg-black"></div>
-      <h3 className="mb-4 text-2xl font-semibold text-center h-15">Find your ticket</h3>
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(getFirebaseClientAuth(), () => {
+      setAuthReady(true);
+      void loadTickets();
+    });
+    return unsubscribe;
+  }, []);
 
-      <div className="mb-4 flex flex-col sm:flex-row gap-2 items-center max-w-lg mx-auto w-full">
-        <div className="relative flex-1 w-full">
-          <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Search className="h-4 w-4" /></div>
-          <input value={id} onChange={(e) => setId(e.target.value)} placeholder="Enter booking ID (e.g. BM123...)" className="w-full rounded border px-3 py-2 pl-10" />
+  return (
+    <main className="mx-auto min-h-[70vh] w-full max-w-5xl px-4 pb-12 pt-16">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-primary">Show Tickets</p>
+          <h1 className="text-3xl font-bold">Your ticket history</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {email ? `All tickets associated with ${email}` : 'Tickets are securely matched to your signed-in email.'}
+          </p>
         </div>
-        <button onClick={lookup} className="rounded bg-primary px-4 py-2 text-primary-foreground w-full sm:w-auto" disabled={loading}>{loading ? 'Looking up…' : 'Lookup'}</button>
+        {authReady && getFirebaseClientAuth().currentUser ? (
+          <button type="button" onClick={() => void loadTickets()} disabled={loading} className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        ) : null}
       </div>
 
-      {error && <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800 max-w-lg mx-auto">{error}</div>}
+      {!loading && !error && tickets.length > 0 ? (
+        <div className="relative mb-6">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by ticket ID, museum name, or location..."
+            aria-label="Search your tickets"
+            className="h-12 w-full rounded-xl border bg-background pl-12 pr-12 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear ticket search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
-      {result && (
-        <div className="rounded border bg-background p-4 max-w-lg mx-auto">
-          <div className="mb-2 text-sm text-muted-foreground">Booking ID</div>
-          <div className="mb-2 font-mono font-semibold">{result.bookingId}</div>
-          <div className="mb-4 rounded-md border bg-muted/40 p-3">
-            <div className="text-lg font-semibold">{result.museumName || 'Museum ticket'}</div>
-            <div className="text-sm text-muted-foreground">{result.museumLocation || 'Location not available'}</div>
-            {result.museumCategory ? (
-              <div className="mt-1 text-xs text-muted-foreground">Category: {result.museumCategory}</div>
-            ) : null}
-          </div>
+      {loading ? (
+        <div className="flex min-h-52 items-center justify-center rounded-xl border"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+          {error} <Link href="/login" className="ml-2 font-semibold underline">Sign in</Link>
+        </div>
+      ) : tickets.length === 0 ? (
+        <div className="rounded-xl border p-8 text-center text-muted-foreground">
+          <Ticket className="mx-auto mb-3 h-9 w-9" /> No tickets were found for {email || 'this email address'}.
+        </div>
+      ) : filteredTickets.length === 0 ? (
+        <div className="rounded-xl border p-8 text-center text-muted-foreground">
+          <Search className="mx-auto mb-3 h-9 w-9" /> No tickets match “{searchQuery.trim()}”.
+        </div>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2">
+          {filteredTickets.map((ticket) => (
+            <article key={ticket.bookingId} className="rounded-2xl border bg-background p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-mono text-sm font-bold">{ticket.bookingId}</div>
+                  <h2 className="mt-1 text-lg font-semibold">{ticket.museumName || 'Museum ticket'}</h2>
+                  <p className="text-sm text-muted-foreground">{ticket.museumLocation || 'Location unavailable'}</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ticket.expired ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {ticket.expired ? 'Expired' : 'Active'}
+                </span>
+              </div>
 
-          {qrDataUrl && (
-            <div className="mb-4 rounded-lg border bg-white p-4 text-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={qrDataUrl}
-                alt={`QR code for booking ${result.bookingId}`}
-                className="mx-auto h-64 w-64"
-              />
-              <div className="mt-2 text-xs font-medium text-slate-700">Scan this QR at the museum gate</div>
-            </div>
-          )}
+              {qrCodes[ticket.bookingId] ? (
+                <div className="my-4 rounded-lg border bg-white p-3 text-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrCodes[ticket.bookingId]} alt={`QR code for ${ticket.bookingId}`} className="mx-auto h-52 w-52" />
+                  <p className="mt-1 text-xs font-medium text-slate-700">Gate QR</p>
+                </div>
+              ) : null}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-sm text-muted-foreground">Name</div>
-              <div className="font-medium">{result.name}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Email</div>
-              <div className="font-medium">{result.email}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Phone</div>
-              <div className="font-medium">{result.phone || '-'}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Gender</div>
-              <div className="font-medium">{result.gender || '-'}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Age</div>
-              <div className="font-medium">{result.age || '-'}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Visitor Location</div>
-              <div className="font-medium">{result.userLocation || '-'}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Museum ID</div>
-              <div className="font-mono text-xs font-medium">{result.museumId || '-'}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Date</div>
-              <div className="font-medium">{new Date(result.visitDate).toLocaleDateString()}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Time</div>
-              <div className="font-medium">{result.timeSlot}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Tickets</div>
-              <div className="font-medium">{result.numberOfTickets} x {result.visitorType}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Price</div>
-              <div className="font-medium">INR {result.pricePerTicket || 0}/ticket</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Amount</div>
-              <div className="font-medium">INR {result.totalAmount}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Booking Status</div>
-              <div className="font-medium">{result.status}</div>
-            </div>
-            <div>
-              <div className="text-sm text-muted-foreground">Payment</div>
-              <div className="font-medium">{result.paymentStatus || '-'}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 text-sm text-muted-foreground">Created</div>
-          <div className="text-xs">{new Date(result.createdAt).toLocaleString()}</div>
-          <div className="mt-2 text-sm text-muted-foreground">Purchase Date & Time</div>
-          <div className="text-xs">{result.purchaseDateTime ? new Date(result.purchaseDateTime).toLocaleString() : '-'}</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div><span className="text-muted-foreground">Visitor:</span><br />{ticket.name || '-'}</div>
+                <div><span className="text-muted-foreground">Email:</span><br />{ticket.email || '-'}</div>
+                <div><span className="text-muted-foreground">Visit date:</span><br />{displayDate(ticket.visitDate)}</div>
+                <div><span className="text-muted-foreground">Time:</span><br />{ticket.timeSlot || '-'}</div>
+                <div><span className="text-muted-foreground">Tickets:</span><br />{ticket.numberOfTickets} × {ticket.visitorType}</div>
+                <div><span className="text-muted-foreground">Amount:</span><br />INR {ticket.totalAmount || 0}</div>
+                <div><span className="text-muted-foreground">Booking:</span><br />{ticket.status || '-'}</div>
+                <div><span className="text-muted-foreground">Payment:</span><br />{ticket.paymentStatus || '-'}</div>
+              </div>
+            </article>
+          ))}
         </div>
       )}
-    </div>
+    </main>
   );
 }

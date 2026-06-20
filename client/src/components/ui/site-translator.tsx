@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 import { useLanguage } from '../../hooks/use-language';
 import { getSiteTranslation } from '../../lib/site-translations';
 
-const ORIGINAL_TEXT_PROP = '__bmt_original_text';
-const ORIGINAL_ATTR_PREFIX = 'data-bmt-original-';
 const NO_TRANSLATE_SELECTOR = '[data-bmt-no-translate]';
 const TRANSLATABLE_ATTRIBUTES = ['placeholder', 'aria-label', 'title'] as const;
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'TEXTAREA']);
+const textStates = new WeakMap<Text, { original: string; applied: string }>();
+const attributeStates = new WeakMap<Element, Map<string, { original: string; applied: string }>>();
 
 function normalizeText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
@@ -29,10 +29,13 @@ function translateTextNode(node: Text, language: ReturnType<typeof useLanguage>[
     return;
   }
 
-  const original = (node as any)[ORIGINAL_TEXT_PROP] || current;
+  const previous = textStates.get(node);
+  const original = previous && current === normalizeText(previous.applied)
+    ? previous.original
+    : current;
   const translated = getSiteTranslation(language, original);
 
-  (node as any)[ORIGINAL_TEXT_PROP] = original;
+  textStates.set(node, { original, applied: translated });
 
   if (translated !== current) {
     node.nodeValue = (node.nodeValue || '').replace(current, translated);
@@ -50,12 +53,16 @@ function translateAttributes(element: Element, language: ReturnType<typeof useLa
       return;
     }
 
-    const dataAttr = `${ORIGINAL_ATTR_PREFIX}${attr}`;
-    const original = element.getAttribute(dataAttr) || value;
+    const states = attributeStates.get(element) || new Map<string, { original: string; applied: string }>();
+    const previous = states.get(attr);
+    const original = previous && value === previous.applied ? previous.original : value;
     const translated = getSiteTranslation(language, original);
 
-    element.setAttribute(dataAttr, original);
-    element.setAttribute(attr, translated);
+    states.set(attr, { original, applied: translated });
+    attributeStates.set(element, states);
+    if (translated !== value) {
+      element.setAttribute(attr, translated);
+    }
   });
 }
 
@@ -95,6 +102,16 @@ export function SiteTranslator() {
 
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
+        if (mutation.type === 'characterData') {
+          translateTextNode(mutation.target as Text, language);
+          return;
+        }
+
+        if (mutation.type === 'attributes') {
+          translateAttributes(mutation.target as Element, language);
+          return;
+        }
+
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.TEXT_NODE) {
             translateTextNode(node as Text, language);
@@ -109,6 +126,9 @@ export function SiteTranslator() {
 
     observer.observe(document.body, {
       childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [...TRANSLATABLE_ATTRIBUTES],
       subtree: true
     });
 

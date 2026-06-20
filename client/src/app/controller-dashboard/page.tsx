@@ -29,6 +29,7 @@ import { getFirebaseClientRealtimeDatabase, getFirebaseClientAuth } from '../../
 import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
+import CrowdInsightsPanel from '../../components/crowd/CrowdInsightsPanel';
 
 type GateAction = 'entry' | 'exit';
 
@@ -217,14 +218,15 @@ export default function ControllerDashboardPage() {
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
-  const isAuthorized =
-    user?.role === 'admin' || user?.role === 'museum' || user?.role === 'controller';
+  const isAuthorized = user?.role === 'museum' || user?.role === 'controller';
   const signedInEmail = user?.email?.trim().toLowerCase() || '';
   const currentMuseum = useMemo(() => {
     if (!signedInEmail) return null;
     return museums.find((museum) => museum.loginEmail?.trim().toLowerCase() === signedInEmail) || null;
   }, [museums, signedInEmail]);
-  const shouldRestrictToCurrentMuseum = user?.role === 'museum';
+  // Only admins may see the global controller/crowd view. Museum and controller
+  // accounts must be linked to a registered museum by loginEmail.
+  const shouldRestrictToCurrentMuseum = user?.role !== 'admin';
 
   const scopedControllers = useMemo(() => {
     if (!shouldRestrictToCurrentMuseum) {
@@ -235,9 +237,12 @@ export default function ControllerDashboardPage() {
       return [];
     }
 
-    return controllers.filter(
-      (controller) => controller.museumId === currentMuseum.museum_id || controller.museumId === currentMuseum.id
+    const museumIds = new Set(
+      [currentMuseum.museum_id, currentMuseum.id]
+        .filter(Boolean)
+        .map((id) => id.trim().toLowerCase())
     );
+    return controllers.filter((controller) => museumIds.has(controller.museumId.trim().toLowerCase()));
   }, [controllers, currentMuseum, shouldRestrictToCurrentMuseum]);
 
   const selectedDevices = useMemo(() => {
@@ -538,6 +543,7 @@ export default function ControllerDashboardPage() {
 
       if (res.ok && typeof data?.valid === 'boolean') {
         if (data.valid) {
+          window.dispatchEvent(new Event('crowd-insights-updated'));
           setValidationResults((current) => ({
             ...current,
             [gateAction]: {
@@ -907,7 +913,7 @@ export default function ControllerDashboardPage() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">Access Restricted</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              You must be registered as a Supervisor, Operator, or Admin to open this scanner simulation page.
+              You must be registered as a museum supervisor or controller to open this scanner simulation page.
             </p>
             <div className="mt-5 flex gap-3">
               <Link href="/login" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/95">
@@ -958,6 +964,23 @@ export default function ControllerDashboardPage() {
               )}
             </div>
           </div>
+
+          {shouldRestrictToCurrentMuseum && !currentMuseum && (
+            <div className="mb-6 rounded-xl border border-slate-700 bg-slate-900 p-5 text-sm text-slate-300">
+              No registered museum is linked with {signedInEmail || 'this account'}. Crowd, controller, and scan details are blank.
+            </div>
+          )}
+
+          {(!shouldRestrictToCurrentMuseum || currentMuseum) && (
+            <CrowdInsightsPanel
+              museumId={shouldRestrictToCurrentMuseum ? (currentMuseum?.museum_id || currentMuseum?.id) : undefined}
+              title="Gate Occupancy Monitor"
+              description="Granted entry and exit scans update this occupancy count automatically."
+              canConfigure={user?.role === 'admin' || user?.role === 'museum'}
+              showDetails
+              className="mb-6 border-slate-800 bg-[#111827]"
+            />
+          )}
 
           <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
             <div className="space-y-6">

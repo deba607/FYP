@@ -65,6 +65,7 @@ export function ActivityTracker() {
       else if (pathname === '/login') pageLabel = 'Login Page';
       else if (pathname === '/signup') pageLabel = 'Signup Page';
       else if (pathname === '/profile') pageLabel = 'User Profile Page';
+      else if (pathname === '/personalized') pageLabel = 'Personalized Experience Dashboard';
       else if (pathname === '/admin') pageLabel = 'Admin Dashboard';
       else if (pathname === '/museum-dashboard') pageLabel = 'Museum Supervisor Dashboard';
       else if (pathname === '/controller-dashboard') pageLabel = 'Gate Entry Dashboard';

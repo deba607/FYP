@@ -1,3 +1,8 @@
+import type {
+  PersonalizationPreferences,
+  PersonalizedRecommendations
+} from './recommendations';
+
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
 
 type ApiErrorShape = {
@@ -328,5 +333,48 @@ export async function resetPassword(email: string, otp: string, password: string
   return apiFetch<{ success: boolean; message: string }>(`${API_BASE_URL}/auth/reset-password`, {
     method: 'POST',
     body: JSON.stringify({ email, otp, password })
+  });
+}
+
+export async function getPersonalizedRecommendations(authToken: string, refresh = false) {
+  return apiFetch<PersonalizedRecommendations>(
+    `${API_BASE_URL}/personalized/recommendations${refresh ? '?refresh=true' : ''}`,
+    { headers: { Authorization: `Bearer ${authToken}` }, cache: 'no-store' }
+  );
+}
+
+export async function savePersonalizationPreferences(
+  authToken: string,
+  preferences: PersonalizationPreferences
+) {
+  return apiFetch<{ success: true; message: string; preferences: PersonalizationPreferences }>(
+    `${API_BASE_URL}/personalized/preferences`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify(preferences)
+    }
+  );
+}
+
+export async function updateMuseumFavorite(authToken: string, museumId: string, favorite: boolean) {
+  return apiFetch<{ success: true; museumId: string; favorite: boolean }>(
+    `${API_BASE_URL}/personalized/favorites`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ museumId, favorite })
+    }
+  );
+}
+
+export async function trackPersonalizationActivity(
+  authToken: string,
+  activity: { type: 'viewed' | 'search' | 'visited'; museumId?: string; query?: string }
+) {
+  return apiFetch<{ success: true }>(`${API_BASE_URL}/personalized/activity`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify(activity)
   });
 }
