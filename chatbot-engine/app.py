@@ -1,3 +1,8 @@
+import collections
+if not hasattr(collections, 'Hashable'):
+    import collections.abc
+    collections.Hashable = collections.abc.Hashable
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from chatbot.museum_assistant import MuseumAssistant
