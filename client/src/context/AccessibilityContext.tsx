@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { getFirebaseClientAuth } from '../lib/config/firebaseClient';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { TextToSpeechEngine, SpeechSettings } from '../lib/speech';
@@ -25,7 +25,7 @@ export interface AccessibilityConfig {
 const defaultConfig: AccessibilityConfig = {
   voiceEnabled: false,
   speechToText: false,
-  language: 'en',
+  language: 'en-IN',
   voiceName: '',
   speed: 1.0,
   pitch: 1.0,
@@ -106,7 +106,7 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
     return unsubscribe;
   }, []);
 
-  const updateConfig = async (updates: Partial<AccessibilityConfig>) => {
+  const updateConfig = useCallback(async (updates: Partial<AccessibilityConfig>) => {
     const nextConfig = { ...config, ...updates };
     setConfigState(nextConfig);
 
@@ -121,9 +121,9 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
         console.error("Failed to persist user preferences", err);
       }
     }
-  };
+  }, [config]);
 
-  const speak = (text: string) => {
+  const speak = useCallback((text: string) => {
     if (!config.voiceEnabled) return;
     setSpeaking(true);
     const settings: SpeechSettings = {
@@ -134,12 +134,12 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
       volume: config.volume,
     };
     ttsEngine.speak(text, settings, () => setSpeaking(false), () => setSpeaking(false));
-  };
+  }, [config.language, config.pitch, config.speed, config.voiceEnabled, config.voiceName, config.volume]);
 
-  const stopSpeaking = () => {
+  const stopSpeaking = useCallback(() => {
     ttsEngine.stop();
     setSpeaking(false);
-  };
+  }, []);
 
   const startVoiceListening = (onResult: (text: string) => void) => {
     if (!sttEngine.isSupported()) return;

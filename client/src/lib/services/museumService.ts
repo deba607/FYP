@@ -22,7 +22,12 @@ export type MuseumRecord = {
   prices: VisitorPrices; // Category-specific prices
   capacity?: number; // Added capacity
   description?: string;
+  history?: string;
+  highlights?: string[];
   imageUrl?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoUrls?: string[];
   virtualTourUrl?: string;
   loginEmail?: string;
   createdAt: string;
@@ -50,6 +55,15 @@ function slugify(text: string): string {
     .replace(/\s+/g, '_')
     .replace(/[^\w-]+/g, '')
     .replace(/--+/g, '_');
+}
+
+function normalizeMediaUrls(values: unknown, fallback = ''): string[] {
+  const candidates = Array.isArray(values) ? [...values] : [];
+  if (fallback) candidates.unshift(fallback);
+  return Array.from(new Set(candidates
+    .map((value) => String(value || '').trim())
+    .filter((value) => /^https?:\/\//i.test(value))))
+    .slice(0, 20);
 }
 
 async function findUserByEmail(email: string) {
@@ -107,7 +121,12 @@ export async function registerMuseum(input: {
   state: string;
   category: string;
   description?: string;
+  history?: string;
+  highlights?: string[];
   imageUrl?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoUrls?: string[];
   prices: VisitorPrices;
   loginEmail?: string;
   loginPassword?: string;
@@ -152,6 +171,8 @@ export async function registerMuseum(input: {
 
   const docRef = firestore.collection('museums').doc();
 
+  const imageUrls = normalizeMediaUrls(input.imageUrls, input.imageUrl);
+  const videoUrls = normalizeMediaUrls(input.videoUrls, input.videoUrl);
   const payload: Record<string, any> = {
     museum_id,
     name: input.name.trim(),
@@ -161,7 +182,12 @@ export async function registerMuseum(input: {
     price: input.prices.Adult ?? 200, // compat
     prices: input.prices,
     description: (input.description || '').trim(),
-    imageUrl: input.imageUrl || '',
+    history: (input.history || '').trim(),
+    highlights: Array.isArray(input.highlights) ? input.highlights.map((item) => String(item).trim()).filter(Boolean).slice(0, 30) : [],
+    imageUrl: imageUrls[0] || '',
+    imageUrls,
+    videoUrl: videoUrls[0] || '',
+    videoUrls,
     createdAt: now,
     updatedAt: now
   };
@@ -202,7 +228,12 @@ export async function updateMuseum(id: string, input: {
   state: string;
   category: string;
   description?: string;
+  history?: string;
+  highlights?: string[];
   imageUrl?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoUrls?: string[];
   prices: VisitorPrices;
   loginEmail?: string;
   loginPassword?: string;
@@ -235,38 +266,9 @@ export async function updateMuseum(id: string, input: {
   const oldLoginEmail = oldData.loginEmail ? String(oldData.loginEmail).trim().toLowerCase() : '';
   const newLoginEmail = input.loginEmail ? input.loginEmail.trim().toLowerCase() : '';
 
-  // Handle Login Email changes/validations
+  // The login email is the ownership key and must remain immutable after registration.
   if (newLoginEmail && newLoginEmail !== oldLoginEmail) {
-    const existingUserSnapshot = await findUserByEmail(newLoginEmail);
-
-    if (!existingUserSnapshot.empty) {
-      throw new ApiError('User account with this email/user ID already exists', 400);
-    }
-
-    // Update login email in the user account document
-    if (oldLoginEmail) {
-      const userSnapshot = await findUserByEmail(oldLoginEmail);
-
-      if (!userSnapshot.empty) {
-        const userRef = userSnapshot.docs[0].ref;
-        await userRef.update({
-          email: newLoginEmail,
-          updatedAt: now
-        });
-      }
-    } else {
-      // If no old user account was associated but they want to add one now,
-      // password is required
-      if (!input.loginPassword || input.loginPassword.length < 8) {
-        throw new ApiError('Password of at least 8 characters is required to register the login account', 400);
-      }
-      await upsertMuseumLoginUser({
-        email: newLoginEmail,
-        password: input.loginPassword,
-        museumName: input.name,
-        now
-      });
-    }
+    throw new ApiError('Museum login email cannot be changed after registration', 400);
   }
 
   // Handle password updates if provided
@@ -286,6 +288,8 @@ export async function updateMuseum(id: string, input: {
     }
   }
 
+  const imageUrls = normalizeMediaUrls(input.imageUrls, input.imageUrl);
+  const videoUrls = normalizeMediaUrls(input.videoUrls, input.videoUrl);
   const payload: Record<string, any> = {
     name: input.name.trim(),
     location: input.location.trim(),
@@ -294,13 +298,16 @@ export async function updateMuseum(id: string, input: {
     price: input.prices.Adult ?? 200, // compat
     prices: input.prices,
     description: (input.description || '').trim(),
-    imageUrl: input.imageUrl || '',
+    history: (input.history || '').trim(),
+    highlights: Array.isArray(input.highlights) ? input.highlights.map((item) => String(item).trim()).filter(Boolean).slice(0, 30) : [],
+    imageUrl: imageUrls[0] || '',
+    imageUrls,
+    videoUrl: videoUrls[0] || '',
+    videoUrls,
     updatedAt: now
   };
 
-  if (newLoginEmail) {
-    payload.loginEmail = newLoginEmail;
-  }
+  if (oldLoginEmail) payload.loginEmail = oldLoginEmail;
 
   await docRef.update(payload);
 
@@ -353,7 +360,12 @@ export async function getCustomMuseums() {
       prices,
       capacity: data.capacity ? Number(data.capacity) : undefined,
       description: data.description ? String(data.description) : undefined,
+      history: data.history ? String(data.history) : undefined,
+      highlights: Array.isArray(data.highlights) ? data.highlights.map((item: unknown) => String(item)).filter(Boolean) : undefined,
       imageUrl: data.imageUrl ? String(data.imageUrl) : undefined,
+      imageUrls: normalizeMediaUrls(data.imageUrls, data.imageUrl ? String(data.imageUrl) : ''),
+      videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
+      videoUrls: normalizeMediaUrls(data.videoUrls, data.videoUrl ? String(data.videoUrl) : ''),
       virtualTourUrl: data.virtualTourUrl ? String(data.virtualTourUrl) : undefined,
       loginEmail: data.loginEmail ? String(data.loginEmail) : undefined,
       createdAt: toDateString(data.createdAt),

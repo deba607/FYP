@@ -185,7 +185,11 @@ export type ChatAction =
   | { type: 'show_my_tickets' }
   | { type: 'show_ticket_by_id'; bookingId: string }
   | { type: 'auth_success' }
-  | { type: 'auth_required' };
+  | { type: 'auth_required' }
+  | { type: 'virtual_guide'; museumId: string; initialView?: 'overview' | 'videos' | 'gallery' | 'history' }
+  | { type: 'quiz_categories' }
+  | { type: 'quiz_question'; options: string[]; question_id?: string }
+  | { type: 'quiz_result'; score: string; badgeTitle?: string; badgeImage?: string };
 
 export async function sendChatMessage(
   message: string,

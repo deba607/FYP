@@ -30,6 +30,12 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  outputFileTracingIncludes: {
+    '/api/ffmpeg-core': [
+      './node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js',
+      './node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.wasm',
+    ],
+  },
 }
 
 export default nextConfig

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLanguage } from '../../hooks/use-language';
 import { getSiteTranslation } from '../../lib/site-translations';
 
@@ -93,11 +93,22 @@ function translateRoot(root: ParentNode, language: ReturnType<typeof useLanguage
 
 export function SiteTranslator() {
   const { language } = useLanguage();
+  const hasTranslatedPage = useRef(false);
 
   useEffect(() => {
     document.documentElement.lang = language;
 
     const translatePage = () => translateRoot(document.body, language);
+
+    // English is the source language. Avoid a full DOM walk and a permanent
+    // MutationObserver on the default experience.
+    if (language === 'en') {
+      if (hasTranslatedPage.current) translatePage();
+      hasTranslatedPage.current = false;
+      return;
+    }
+
+    hasTranslatedPage.current = true;
     translatePage();
 
     const observer = new MutationObserver((mutations) => {

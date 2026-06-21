@@ -2,6 +2,7 @@ import axios from 'axios';
 import { ApiError } from '../utils/errors';
 import { getFirebaseRealtimeDatabase } from '../config/firebaseAdmin';
 import { encodeRtdbKey } from '../utils/firebaseKey';
+import { after } from 'next/server';
 
 const CHATBOT_ENGINE_URL = process.env.CHATBOT_ENGINE_URL || 'http://localhost:5001';
 
@@ -19,6 +20,38 @@ function redactSensitiveChatMessage(message: string, intent?: string) {
   }
 
   return message;
+}
+
+async function storeChatExchange(input: {
+  message: string;
+  sessionId: string;
+  response: string;
+  intent?: string;
+  bookingData?: Record<string, unknown>;
+  action?: unknown;
+}) {
+  try {
+    const db = getFirebaseRealtimeDatabase();
+    const sessionRef = db.ref(`chat_messages/${encodeRtdbKey(input.sessionId)}`);
+
+    await Promise.all([
+      sessionRef.push({
+        sender: 'user',
+        message: redactSensitiveChatMessage(input.message, input.intent),
+        timestamp: Date.now()
+      }),
+      sessionRef.push({
+        sender: 'bot',
+        message: input.response,
+        intent: input.intent || null,
+        booking_data: input.bookingData || {},
+        action: input.action || null,
+        timestamp: Date.now()
+      })
+    ]);
+  } catch (err) {
+    console.warn('Failed to write chat message to Firebase RTDB:', (err as Error).message);
+  }
 }
 
 export async function sendMessageToChatbot(input: {
@@ -44,32 +77,16 @@ export async function sendMessageToChatbot(input: {
       auth: input.auth || {}
     });
 
-    // Store messages in Firebase Realtime Database (server-side)
-    try {
-      const db = getFirebaseRealtimeDatabase();
-      const sessionId = encodeRtdbKey(input.session_id || response.data.session_id || 'default');
-      const sessionRef = db.ref(`chat_messages/${sessionId}`);
-
-      // push user message
-      await sessionRef.push({
-        sender: 'user',
-        message: redactSensitiveChatMessage(input.message, response.data.intent),
-        timestamp: Date.now()
-      });
-
-      // push bot response
-      await sessionRef.push({
-        sender: 'bot',
-        message: response.data.response,
-        intent: response.data.intent || null,
-        booking_data: response.data.booking_data || {},
-        action: response.data.action || null,
-        timestamp: Date.now()
-      });
-    } catch (err) {
-      // don't block the chat flow if DB logging fails
-      console.warn('Failed to write chat message to Firebase RTDB:', (err as Error).message);
-    }
+    // Persist analytics after the response is sent. Chat latency should only be
+    // determined by the chatbot engine, not by two extra database writes.
+    after(() => storeChatExchange({
+      message: input.message,
+      sessionId: input.session_id || response.data.session_id || 'default',
+      response: response.data.response,
+      intent: response.data.intent,
+      bookingData: response.data.booking_data,
+      action: response.data.action
+    }));
 
     return {
       success: true,

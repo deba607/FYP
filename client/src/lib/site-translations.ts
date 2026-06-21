@@ -602,17 +602,17 @@ export const siteTranslations: SiteDictionary = {
       bn: 'মোড়',
       ta: 'திருப்பங்கள்'
     }
-  , Driving: {
+  , '__legacy_corrupted_Driving': {
       hi: 'ड्राइविंग',
       bn: 'ড্রাইভিং',
       ta: 'வாகனம் ஓட்டுதல்'
     }
-  , Walking: {
+  , '__legacy_corrupted_Walking': {
       hi: 'पैदल चलना',
       bn: 'হাঁটা',
       ta: 'நடப்பது'
     }
-  , Cycling: {
+  , '__legacy_corrupted_Cycling': {
       hi: 'साइकिल चलाना',
       bn: 'সাইকেল চালানো',
       ta: 'மிதிவண்டி'
@@ -622,37 +622,37 @@ export const siteTranslations: SiteDictionary = {
       bn: 'পাবলিক ট্রানজিট',
       ta: 'பொதுப் போக்குவரத்து'
     }
-  , Train: {
+  , '__legacy_corrupted_Train': {
       hi: 'ट्रेन',
       bn: 'ট্রেন',
       ta: 'ரயில்'
     }
-  , 'Your ticket history': {
+  , '__legacy_corrupted_Your ticket history': {
       hi: 'आपका टिकट इतिहास',
       bn: 'আপনার টিকিটের ইতিহাস',
       ta: 'உங்கள் டிக்கெட் வரலாறு'
     }
-  , 'Tickets are securely matched to your signed-in email.': {
+  , '__legacy_corrupted_Tickets securely matched': {
       hi: 'टिकट सुरक्षित रूप से आपके साइन-इन किए गए ईमेल से मेल खाते हैं।',
       bn: 'টিকিটগুলো আপনার সাইন-ইন করা ইমেলের সাথে সুরক্ষিতভাবে মিলেছে।',
       ta: 'டிக்கெட்டுகள் உங்கள் உள்நுழைந்த மின்னஞ்சலுடன் பாதுகாப்பாகப் பொருத்தப்பட்டுள்ளன.'
     }
-  , Refresh: {
+  , '__legacy_corrupted_Refresh': {
       hi: 'रीफ्रेश',
       bn: 'রিফ্রেশ',
       ta: 'புதுப்பி'
     }
-  , 'Search by ticket ID, museum name, or location...': {
+  , '__legacy_corrupted_Search by ticket': {
       hi: 'टिकट आईडी, संग्रहालय का नाम, या स्थान खोजें...',
       bn: 'টিকিট আইডি, জাদুঘরের নাম বা অবস্থান অনুযায়ী খুঁজুন...',
       ta: 'டிக்கெட் ஐடி, அருங்காட்சியகப் பெயர் அல்லது இருப்பிடம் மூலம் தேடுங்கள்...'
     }
-  , 'Search your tickets': {
+  , '__legacy_corrupted_Search your tickets': {
       hi: 'अपने टिकट खोजें',
       bn: 'আপনার টিকিট খুঁজুন',
       ta: 'உங்கள் டிக்கெட்டுகளைத் தேடுங்கள்'
     }
-  , 'Clear ticket search': {
+  , '__legacy_corrupted_Clear ticket search': {
       hi: 'टिकट खोज साफ़ करें',
       bn: 'টিকিট অনুসন্ধান মুছুন',
       ta: 'டிக்கெட் தேடலை அழிக்கவும்'
@@ -662,17 +662,17 @@ export const siteTranslations: SiteDictionary = {
       bn: 'আপনার ইমেল ঠিকানার সাথে যুক্ত টিকিট দেখতে অনুগ্রহ করে সাইন ইন করুন।',
       ta: 'உங்கள் மின்னஞ்சல் முகவரியுடன் தொடர்புடைய டிக்கெட்டுகளைப் பார்க்க உள்நுழையவும்.'
     }
-  , Expired: {
+  , '__legacy_corrupted_Expired': {
       hi: 'समाप्त',
       bn: 'মেয়াদোত্তীর্ণ',
       ta: 'காலாவதியானது'
     }
-  , Active: {
+  , '__legacy_corrupted_Active': {
       hi: 'सक्रिय',
       bn: 'সक्रिय',
       ta: 'செயலில் உள்ளது'
     }
-  , 'Gate QR': {
+  , '__legacy_corrupted_Gate QR': {
       hi: 'गेट क्यूआर',
       bn: 'गेट किউআর',
       ta: 'கேট கியூஆர்'
@@ -682,7 +682,7 @@ export const siteTranslations: SiteDictionary = {
       bn: 'দর্শনার্থী:',
       ta: 'பார்வையாளர்:'
     }
-  , 'Visit date:': {
+  , '__legacy_corrupted_Visit date': {
       hi: 'यात्रा की तारीख:',
       bn: 'ভ্রমণের তারিখ:',
       ta: 'வருகை தேதி:'

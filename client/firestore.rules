@@ -132,6 +132,31 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Quiz Categories: read-only for everyone, write for admin
+    match /quizCategories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Quiz Questions include correct answers and are only exposed through the
+    // server API, which strips answers for players.
+    match /quizQuestions/{questionId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Quiz Scores: read for everyone, create/update/delete for own user
+    match /quizScores/{scoreId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Quiz Badges: read-only for everyone, write for admin
+    match /quizBadges/{badgeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Default: deny all other access
     match /{document=**} {
       allow read: if false;

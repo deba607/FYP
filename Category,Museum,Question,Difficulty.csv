@@ -1,0 +1,51 @@
+Category,Museum,Question,Difficulty,Points,Status,Option1,Option2,Option3,Option4,CorrectAnswer,Explanation
+Museum History,Indian Museum,What is the main purpose of a museum?,Easy,10,Active,To preserve history and culture,To sell products,To play games,To grow plants,To preserve history and culture,Museums preserve and display historical and cultural objects.
+Museum History,Indian Museum,Which is the oldest museum in India?,Easy,10,Active,Indian Museum Kolkata,National Museum,Victoria Memorial,Salar Jung Museum,Indian Museum Kolkata,The Indian Museum in Kolkata was established in 1814.
+Museum History,Indian Museum,What is an artifact?,Easy,10,Active,Ancient human-made object,Modern gadget,Animal,Fruit,Ancient human-made object,Artifacts help us understand the past.
+Museum History,National Museum,Who studies artifacts?,Easy,10,Active,Archaeologist,Doctor,Engineer,Pilot,Archaeologist,Archaeologists study ancient civilizations.
+Museum History,No Museum Link,Museums help preserve?,Easy,10,Active,History and Culture,Weather,Traffic,Movies,History and Culture,Museums protect valuable heritage.
+Ancient India,National Museum,Which civilization built Harappa?,Medium,15,Active,Indus Valley,Roman,Egyptian,Greek,Indus Valley,Harappa belonged to the Indus Valley Civilization.
+Ancient India,National Museum,Which script is still undeciphered?,Medium,15,Active,Indus Script,Brahmi,Devanagari,Tamil,Indus Script,The Indus script has not yet been fully deciphered.
+Ancient India,National Museum,The Ashoka Pillar represents?,Medium,15,Active,Peace and Justice,War,Trade,Agriculture,Peace and Justice,The Lion Capital symbolizes peace and governance.
+Ancient India,National Museum,Who was Ashoka?,Easy,10,Active,Mauryan Emperor,Mughal King,Scientist,Poet,Mauryan Emperor,Ashoka ruled much of the Indian subcontinent.
+Ancient India,Indian Museum,Ajanta Caves are famous for?,Easy,10,Active,Buddhist Paintings,Modern Art,Cars,Music,Buddhist Paintings,Ajanta Caves contain ancient Buddhist paintings.
+Dinosaur Quiz,Indian Museum,Which dinosaur is known as the King of Dinosaurs?,Easy,10,Active,Tyrannosaurus Rex,Stegosaurus,Triceratops,Velociraptor,Tyrannosaurus Rex,T-Rex was a large carnivorous dinosaur.
+Dinosaur Quiz,Indian Museum,Which dinosaur had three horns?,Easy,10,Active,Triceratops,T-Rex,Spinosaurus,Brachiosaurus,Triceratops,Triceratops had three facial horns.
+Dinosaur Quiz,Indian Museum,What did herbivorous dinosaurs eat?,Easy,10,Active,Plants,Meat,Fish,Insects,Plants,Herbivores survive on vegetation.
+Dinosaur Quiz,Indian Museum,Which dinosaur had a long neck?,Easy,10,Active,Brachiosaurus,Velociraptor,T-Rex,Ankylosaurus,Brachiosaurus,It used its long neck to reach tall trees.
+Dinosaur Quiz,Indian Museum,Dinosaurs became extinct because of?,Medium,15,Active,Asteroid Impact,Flood,Tornado,Earthquake,Asteroid Impact,Scientists believe an asteroid caused mass extinction.
+Science,Science City,Water is made of?,Easy,10,Active,Hydrogen and Oxygen,Carbon,Oxygen only,Nitrogen,Hydrogen and Oxygen,H2O contains two hydrogen atoms and one oxygen atom.
+Science,Science City,Which planet is called the Red Planet?,Easy,10,Active,Mars,Jupiter,Earth,Venus,Mars,Iron oxide gives Mars its red color.
+Science,Science City,The Sun is a?,Easy,10,Active,Star,Planet,Galaxy,Comet,Star,The Sun is the nearest star to Earth.
+Science,Science City,Plants prepare food by?,Medium,15,Active,Photosynthesis,Respiration,Digestion,Evaporation,Photosynthesis,Plants use sunlight to make food.
+Science,Science City,Gravity was explained by?,Medium,15,Active,Isaac Newton,Einstein,Edison,Galileo,Isaac Newton,Newton formulated the law of gravity.
+Space,Science Museum,Which planet has rings?,Easy,10,Active,Saturn,Mars,Venus,Earth,Saturn,Saturn is famous for its ring system.
+Space,Science Museum,Earth revolves around?,Easy,10,Active,Sun,Moon,Mars,Jupiter,Sun,Earth completes one orbit every year.
+Space,Science Museum,The first person on the Moon?,Medium,15,Active,Neil Armstrong,Yuri Gagarin,Rakesh Sharma,Kalpana Chawla,Neil Armstrong,He landed on the Moon in 1969.
+Space,Science Museum,The largest planet is?,Easy,10,Active,Jupiter,Mars,Earth,Venus,Jupiter,Jupiter is the largest planet in our Solar System.
+Space,Science Museum,The Milky Way is a?,Medium,15,Active,Galaxy,Planet,Star,Asteroid,Galaxy,Earth belongs to the Milky Way Galaxy.
+Art & Paintings,No Museum Link,Who painted the Mona Lisa?,Easy,10,Active,Leonardo da Vinci,Picasso,Van Gogh,Michelangelo,Leonardo da Vinci,Mona Lisa is one of the world's most famous paintings.
+Art & Paintings,No Museum Link,Paintings are usually displayed in?,Easy,10,Active,Art Gallery,Kitchen,Garage,Garden,Art Gallery,Art galleries display artwork.
+Art & Paintings,No Museum Link,Which artist cut off part of his ear?,Medium,15,Active,Van Gogh,Picasso,Da Vinci,Raphael,Van Gogh,Vincent van Gogh is known for this incident.
+Art & Paintings,No Museum Link,Sculptures are made from?,Easy,10,Active,Stone and Metal,Paper,Fabric,Plastic only,Stone and Metal,Sculptures are created from durable materials.
+Art & Paintings,No Museum Link,The Mona Lisa is kept in?,Medium,15,Active,Louvre Museum,British Museum,Indian Museum,National Museum,Louvre Museum,It is displayed in Paris.
+Wildlife,Natural History Museum,Which animal is called the King of the Jungle?,Easy,10,Active,Lion,Tiger,Elephant,Leopard,Lion,The lion symbolizes strength.
+Wildlife,Natural History Museum,Which bird cannot fly?,Easy,10,Active,Ostrich,Eagle,Sparrow,Crow,Ostrich,Ostriches are flightless birds.
+Wildlife,Natural History Museum,Which is the largest land animal?,Easy,10,Active,Elephant,Rhino,Horse,Giraffe,Elephant,Elephants are the largest land mammals.
+Wildlife,Natural History Museum,Which animal has black and white stripes?,Easy,10,Active,Zebra,Tiger,Panda,Cow,Zebra,Zebras have distinctive striped coats.
+Wildlife,Natural History Museum,Which animal is the fastest on land?,Medium,15,Active,Cheetah,Lion,Tiger,Horse,Cheetah,Cheetahs can run over 100 km/h.
+Indian Culture,No Museum Link,Which is India's national animal?,Easy,10,Active,Tiger,Lion,Elephant,Peacock,Tiger,The Bengal Tiger is India's national animal.
+Indian Culture,No Museum Link,India's national bird is?,Easy,10,Active,Peacock,Eagle,Parrot,Crow,Peacock,The Indian Peacock is the national bird.
+Indian Culture,No Museum Link,Which festival is known as the Festival of Lights?,Easy,10,Active,Diwali,Holi,Eid,Christmas,Diwali,Diwali celebrates the victory of light over darkness.
+Indian Culture,No Museum Link,The Taj Mahal is located in?,Easy,10,Active,Agra,Delhi,Jaipur,Mumbai,Agra,It was built by Shah Jahan.
+Indian Culture,No Museum Link,India's national flag has how many colors?,Easy,10,Active,Three,Two,Four,Five,Three,Saffron, White, and Green.
+General Knowledge,No Museum Link,Which continent is India in?,Easy,10,Active,Asia,Africa,Europe,Australia,Asia,India is located in Asia.
+General Knowledge,No Museum Link,How many days are there in a leap year?,Easy,10,Active,366,365,364,367,366,Leap years occur every four years.
+General Knowledge,No Museum Link,Which is the largest ocean?,Medium,15,Active,Pacific Ocean,Indian Ocean,Atlantic Ocean,Arctic Ocean,Pacific Ocean,The Pacific Ocean covers the largest area.
+General Knowledge,No Museum Link,Which is the tallest mountain in the world?,Medium,15,Active,Mount Everest,K2,Kangchenjunga,Nanda Devi,Mount Everest,Mount Everest is about 8,849 meters high.
+General Knowledge,No Museum Link,Which gas do humans breathe in?,Easy,10,Active,Oxygen,Carbon Dioxide,Hydrogen,Nitrogen,Oxygen,Oxygen is essential for human life.
+Museum Fun Facts,Indian Museum,Why should we not touch museum artifacts?,Easy,10,Active,They can be damaged,They are heavy,They are dirty,They are expensive,They can be damaged,Touching artifacts can damage them.
+Museum Fun Facts,Indian Museum,Museum guides help visitors by?,Easy,10,Active,Explaining exhibits,Selling food,Driving buses,Cleaning floors,Explaining exhibits,Guides provide educational information.
+Museum Fun Facts,Indian Museum,Fossils are remains of?,Easy,10,Active,Ancient plants and animals,Modern animals,Buildings,Computers,Ancient plants and animals,Fossils help scientists study prehistoric life.
+Museum Fun Facts,Indian Museum,What should visitors do inside museums?,Easy,10,Active,Respect exhibits,Run loudly,Touch everything,Eat near exhibits,Respect exhibits,Good behavior protects museum collections.
+Museum Fun Facts,Indian Museum,Why are museums important for children?,Easy,10,Active,They make learning fun,They replace schools,They sell toys,They teach driving,They make learning fun,Museums encourage curiosity through interactive learning.

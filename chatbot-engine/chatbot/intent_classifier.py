@@ -83,11 +83,34 @@ class IntentClassifier:
                 "\u09a1\u09bf\u09b8\u0995\u09be\u0989\u09a8\u09cd\u099f", "\u09b6\u09bf\u0995\u09cd\u09b7\u09be\u09b0\u09cd\u09a5\u09c0",
                 "\u0ba4\u0bb3\u0bcd\u0bb3\u0bc1\u0baa\u0b9f\u0bbf", "\u0bae\u0bbe\u0ba3\u0bb5\u0bb0\u0bcd"
             ],
+            "quiz": [
+                "start quiz", "play quiz", "museum quiz", "kids quiz", "ask me questions",
+                "i want to learn", "history quiz", "science quiz", "dinosaur quiz", "fun facts",
+                "challenge me", "choose category", "play again", "quiz champion", "quiz"
+            ],
             "general": []
         }
 
     def classify(self, message: str) -> str:
         message_lower = message.lower()
+
+        virtual_guide_phrases = (
+            "virtual tour", "virtual guide", "museum video", "museum videos",
+            "watch video", "show video", "gallery", "photo gallery", "museum images",
+            "show exhibits", "show artifacts", "artifact collection", "take me inside",
+            "visit virtually", "historical video", "museum documentary", "show exhibition",
+            "museum history", "watch museum"
+        )
+        if any(phrase in message_lower for phrase in virtual_guide_phrases):
+            return "virtual_guide"
+        if "show me" in message_lower and "museum" in message_lower and "museums" not in message_lower and " museum in " not in message_lower:
+            return "virtual_guide"
+
+        if (
+            __import__('re').search(r"\b(change|switch|replace|different|another)\b", message_lower)
+            and __import__('re').search(r"\bmuseums?\b", message_lower)
+        ):
+            return "book_ticket"
 
         if __import__('re').search(r"\bBM\d+\b|\bBK\d+\b", message, __import__('re').IGNORECASE):
             return "show_ticket_by_id"

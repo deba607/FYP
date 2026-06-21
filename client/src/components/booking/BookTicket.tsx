@@ -16,6 +16,12 @@ import { useLanguage } from '../../hooks/use-language';
 import { buildTicketQrPayload } from '../../lib/ticketQr';
 import MuseumDirections from '../navigation/MuseumDirections';
 import { getMuseumsForClient } from '../../lib/clientMuseums';
+import dynamic from 'next/dynamic';
+
+const VirtualGuide = dynamic(() => import('../VirtualGuide/VirtualGuide'), {
+  ssr: false,
+  loading: () => <div className="min-h-44 animate-pulse rounded-2xl border bg-muted/20" />
+});
 
 const TIME_SLOTS = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)'];
 type MuseumOption = {
@@ -628,11 +634,25 @@ function BookTicket() {
           </div>
 
           {selectedMuseum ? (
-            <MuseumDirections museum={selectedMuseum} compact className="border-primary/20 bg-primary/5" />
+            <section className="space-y-3" aria-labelledby="explore-before-visiting-title">
+              <div>
+                <h4 id="explore-before-visiting-title" className="text-lg font-semibold">Explore Before Visiting</h4>
+                <p className="text-sm text-muted-foreground">Watch tours, browse museum photos, and learn the history without leaving your booking.</p>
+              </div>
+              <VirtualGuide
+                museumId={selectedMuseum.museum_id}
+                compact
+                onBook={() => document.getElementById('manual-booking-visitor-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                onDirections={() => document.getElementById('manual-booking-directions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              />
+              <div id="manual-booking-directions">
+                <MuseumDirections museum={selectedMuseum} compact className="border-primary/20 bg-primary/5" />
+              </div>
+            </section>
           ) : null}
 
           {/* Visitor Info (Gender, Age, Location) */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div id="manual-booking-visitor-details" className="grid scroll-mt-24 grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <Label htmlFor="gender">Gender</Label>
               <select

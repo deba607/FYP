@@ -78,6 +78,25 @@ class BookingHandler:
         
         # Extract number of tickets
         if not booking_data.get("tickets"):
+            # Check if they specified multiple visitor types and counts directly
+            parsed_combos = self.parse_multiple_visitor_types(message)
+            if parsed_combos:
+                total_tickets = sum(parsed_combos.values())
+                if 1 <= total_tickets <= MAX_TICKETS:
+                    booking_data["tickets"] = total_tickets
+                    booking_data["visitor_combo"] = parsed_combos
+                    booking_data["visitor_combo_remaining"] = 0
+                    booking_data["visitor_combo_step"] = 0
+                    return self._finalize_visitor_combo(booking_data)
+                elif total_tickets > MAX_TICKETS:
+                    tickets_list = [f"{i}. {i}" for i in range(1, MAX_TICKETS + 1)]
+                    tickets_str = "\n".join(tickets_list)
+                    return {
+                        "message": f"Sorry, you can book a maximum of {MAX_TICKETS} tickets at once. Please specify a number between 1 and {MAX_TICKETS}:\n{tickets_str}",
+                        "booking_data": booking_data,
+                        "complete": False
+                    }
+
             tickets = self.extract_number(message)
             if tickets and 1 <= tickets <= MAX_TICKETS:
                 booking_data["tickets"] = tickets
@@ -149,11 +168,11 @@ class BookingHandler:
             combo_summary = ", ".join(f"{v}× {k}" for k, v in combo.items() if v > 0)
             lines.append(f"Assigned so far: {combo_summary}")
         lines.append("")
-        lines.append("How many tickets for each visitor type? Please pick one category at a time:")
+        lines.append("How many tickets for each visitor type? You can select one or multiple categories at a time:")
         for idx, vtype in enumerate(VISITOR_TYPES, 1):
             lines.append(f"{idx}. {vtype} (₹{PRICES[vtype]})")
         lines.append("")
-        lines.append("Type the category name (or number) and count, e.g. \"2 Adult\" or \"1 Child\", or just the category name for 1 ticket.")
+        lines.append("Type the category name (or number) and count, e.g. \"2 Adult and 1 Child\", \"2 Adult, 1 Child\", or just the category name for 1 ticket.")
 
         return {
             "message": "\n".join(lines),
@@ -166,6 +185,40 @@ class BookingHandler:
         remaining = booking_data["visitor_combo_remaining"]
         combo = booking_data.get("visitor_combo", {})
         message_stripped = message.strip()
+
+        # Try to parse multiple visitor types and counts
+        parsed_combos = self.parse_multiple_visitor_types(message_stripped)
+        
+        if parsed_combos:
+            total_requested = sum(parsed_combos.values())
+            if total_requested > remaining:
+                return {
+                    "message": f"You only have {remaining} ticket(s) left to assign, but you specified {total_requested} ticket(s). Please try again with {remaining} or fewer tickets.",
+                    "booking_data": booking_data,
+                    "complete": False
+                }
+            
+            # Check for invalid count
+            for vt, cnt in parsed_combos.items():
+                if cnt < 1:
+                    return {
+                        "message": f"Please enter at least 1 ticket. You have {remaining} ticket(s) left.",
+                        "booking_data": booking_data,
+                        "complete": False
+                    }
+            
+            # Add all to combo
+            for vt, cnt in parsed_combos.items():
+                combo[vt] = combo.get(vt, 0) + cnt
+                remaining -= cnt
+            
+            booking_data["visitor_combo"] = combo
+            booking_data["visitor_combo_remaining"] = remaining
+            
+            if remaining <= 0:
+                return self._finalize_visitor_combo(booking_data)
+            else:
+                return self._ask_next_visitor_combo(booking_data)
 
         # Try to parse "N <type>" or "<type> N" or just "<type>" (defaults to 1)
         count = None
@@ -354,3 +407,55 @@ class BookingHandler:
         elif "research" in text_lower or "scientist" in text_lower or "researcher" in text_lower:
             return "Researcher/Scientist"
         return None
+
+    def parse_multiple_visitor_types(self, text: str) -> Dict[str, int]:
+        text_lower = text.lower()
+        # Clean specific punctuation to simplify matching
+        clean_text = re.sub(r'[:\-=\?]', ' ', text_lower)
+        
+        # Regex to match: [count] [category] [count]
+        pattern = r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)?\s*(?:tickets?\s*)?(?:for\s*|of\s*|each\s*|for\s*each\s*)?(adults?|grown\s*ups?|grown\-ups?|regular|child(?:ren)?|kids?|minors?|senior\s*citizens?|seniors?|elderly|old|students?|colleges?|schools?|professors?|teachers?|facult(?:y|ies)|researchers?|scientists?)\s*(one|two|three|four|five|six|seven|eight|nine|ten|\d+)?\b'
+        
+        matches = re.finditer(pattern, clean_text)
+        parsed_combos = {}
+        
+        word_to_num = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+        }
+        
+        for m in matches:
+            g1, category_word, g3 = m.groups()
+            
+            vtype = None
+            if any(x in category_word for x in ["adult", "grown", "regular"]):
+                vtype = "Adult"
+            elif any(x in category_word for x in ["child", "kid", "minor"]):
+                vtype = "Child"
+            elif any(x in category_word for x in ["senior", "elderly", "old"]):
+                vtype = "Senior Citizen"
+            elif any(x in category_word for x in ["student", "college", "school"]):
+                vtype = "Student"
+            elif any(x in category_word for x in ["professor", "teacher", "faculty"]):
+                vtype = "Professor"
+            elif any(x in category_word for x in ["research", "scientist", "researcher"]):
+                vtype = "Researcher/Scientist"
+                
+            if not vtype:
+                continue
+                
+            count = None
+            count_str = g1 or g3
+            if count_str:
+                count_str = count_str.strip()
+                if count_str.isdigit():
+                    count = int(count_str)
+                else:
+                    count = word_to_num.get(count_str)
+            
+            if count is None:
+                count = 1
+                
+            parsed_combos[vtype] = parsed_combos.get(vtype, 0) + count
+            
+        return parsed_combos

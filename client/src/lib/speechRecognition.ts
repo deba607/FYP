@@ -1,3 +1,5 @@
+import { normalizeSpeechLocale } from './speech';
+
 export interface SpeechRecognitionResult {
   transcript: string;
   isFinal: boolean;
@@ -38,7 +40,7 @@ export class SpeechRecognitionEngine {
       this.recognition.abort();
     }
 
-    this.recognition.lang = language;
+    this.recognition.lang = normalizeSpeechLocale(language);
     this.recognition.onstart = () => {
       this.active = true;
     };

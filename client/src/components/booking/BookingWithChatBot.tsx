@@ -3,22 +3,56 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users, Route, Sparkles, Mic, MicOff } from 'lucide-react';
+import { MessageCircle, RotateCcw, Ticket, ChevronUp, ChevronDown, CalendarDays, Plus, Minus, Users, Route, Sparkles, Mic, MicOff, Settings, Volume2, Gamepad2 } from 'lucide-react';
 import { onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { resetChatSession, sendChatMessage, createRazorpayOrder, verifyRazorpayPayment, getMyTicketHistory, getPersonalizedRecommendations, savePersonalizationPreferences, updateMuseumFavorite, trackPersonalizationActivity } from '../../lib/api';
 import type { TicketHistoryItem } from '../../lib/api';
+import type { ChatAction } from '../../lib/api';
 import { getFirebaseClientAuth } from '../../lib/config/firebaseClient';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Trophy, Award, BookOpen, X, Loader2 } from 'lucide-react';
+
+// Quiz Imports
+import { fetchQuizCategories, fetchQuizLeaderboard, fetchQuizBadges, fetchQuizRecommendations, prefetchQuizQuestions } from '../../lib/quizAPI';
+import { useQuiz } from '../../hooks/useQuiz';
+import { useTimer } from '../../hooks/useTimer';
+import type { QuizCategory, QuizScore, QuizBadge } from '../../lib/quiz';
 import { encodeRtdbKey } from '../../lib/utils/firebaseKey';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 import { buildTicketQrPayload, type TicketQrBooking } from '../../lib/ticketQr';
-import MuseumDirections from '../navigation/MuseumDirections';
 import { useAccessibility } from '../../context/AccessibilityContext';
 import type { DirectionMuseum } from '../../lib/directions';
 import { getMuseumsForClient } from '../../lib/clientMuseums';
 import type { RecommendedMuseum } from '../../lib/recommendations';
-import RecommendationCard from '../personalized/RecommendationCard';
 import { findNearbyMuseums, getCurrentCoordinates } from '../../lib/nearbyMuseums';
+import { openAccessibilitySettings } from '../../lib/accessibilityEvents';
+import type { VirtualGuideChatAction } from '../../lib/virtualGuide';
+import { ChatbotQuizCategories, ChatbotQuizResult } from '../Quiz/ChatbotQuiz';
+
+type QuizChatAction = Extract<ChatAction, { type: 'quiz_categories' | 'quiz_question' | 'quiz_result' }>;
+
+function isQuizChatAction(action: ChatAction | undefined): action is QuizChatAction {
+  return Boolean(action && ['quiz_categories', 'quiz_question', 'quiz_result'].includes(action.type));
+}
+
+const QuizCard = dynamic(() => import('../Quiz/QuizCard'));
+const QuizQuestion = dynamic(() => import('../Quiz/QuizQuestion'));
+const QuizTimer = dynamic(() => import('../Quiz/QuizTimer'));
+const QuizProgress = dynamic(() => import('../Quiz/QuizProgress'));
+const QuizResult = dynamic(() => import('../Quiz/QuizResult'));
+const QuizBadgeList = dynamic(() => import('../Quiz/QuizBadge'));
+const QuizLeaderboard = dynamic(() => import('../Quiz/QuizLeaderboard'));
+const QuizRecommendation = dynamic(() => import('../Quiz/QuizRecommendation'));
+const MuseumDirections = dynamic(() => import('../navigation/MuseumDirections'));
+const RecommendationCard = dynamic(() => import('../personalized/RecommendationCard'));
+
+const VirtualGuide = dynamic(() => import('../VirtualGuide/VirtualGuide'), {
+  ssr: false,
+  loading: () => <div className="min-h-44 animate-pulse rounded-xl border bg-muted/20" />
+});
 
 type ChatMessage = {
   from: 'user' | 'bot';
@@ -36,6 +70,8 @@ type ChatMessage = {
   directionsMuseum?: DirectionMuseum;
   directionsOptions?: DirectionMuseum[];
   recommendationMuseums?: RecommendedMuseum[];
+  virtualGuide?: Omit<VirtualGuideChatAction, 'type'>;
+  quizAction?: QuizChatAction;
 };
 
 type MuseumOption = {
@@ -1029,6 +1065,111 @@ export default function BookingWithChatBot() {
   const [authChecked, setAuthChecked] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const lastSpokenMessageRef = useRef('');
+
+  // Quiz Modal State Variables
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+  const [quizCategoriesList, setQuizCategoriesList] = useState<QuizCategory[]>([]);
+  const [quizRecommendationsList, setQuizRecommendationsList] = useState<QuizCategory[]>([]);
+  const [quizLeaderboardList, setQuizLeaderboardList] = useState<QuizScore[]>([]);
+  const [quizBadgesList, setQuizBadgesList] = useState<QuizBadge[]>([]);
+  const [quizEarnedBadgeIds, setQuizEarnedBadgeIds] = useState<string[]>([]);
+  const [quizSelectedCategoryId, setQuizSelectedCategoryId] = useState<string | null>(null);
+  const [quizLoading, setQuizLoading] = useState(true);
+  const [quizActiveTab, setQuizActiveTab] = useState<'categories' | 'leaderboard' | 'badges'>('categories');
+
+  // Monitor Auth & load badges for quiz
+  useEffect(() => {
+    if (!isQuizModalOpen) return;
+
+    const auth = getFirebaseClientAuth();
+    const user = auth.currentUser;
+    if (user) {
+      import('firebase/firestore').then(async ({ getFirestore, doc, getDoc }) => {
+        try {
+          const db = getFirestore();
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            setQuizEarnedBadgeIds(userDoc.data().earnedBadges || []);
+          }
+        } catch (e) {
+          console.warn('Failed to load user badges for modal:', e);
+        }
+      });
+    } else {
+      setQuizEarnedBadgeIds([]);
+    }
+  }, [isQuizModalOpen, isLoggedIn]);
+
+  // Fetch initial dashboard data for quiz modal
+  useEffect(() => {
+    if (!isQuizModalOpen) return;
+    let cancelled = false;
+    setQuizLoading(true);
+
+    fetchQuizCategories()
+      .then((items) => {
+        if (!cancelled) setQuizCategoriesList(items);
+      })
+      .catch((err) => console.error('Failed to load quiz categories for modal:', err))
+      .finally(() => {
+        if (!cancelled) setQuizLoading(false);
+      });
+
+    void fetchQuizLeaderboard().then((items) => {
+      if (!cancelled) setQuizLeaderboardList(items);
+    }).catch((err) => console.error('Failed to load quiz leaderboard for modal:', err));
+
+    void fetchQuizBadges().then((items) => {
+      if (!cancelled) setQuizBadgesList(items);
+    }).catch((err) => console.error('Failed to load quiz badges for modal:', err));
+
+    return () => { cancelled = true; };
+  }, [isQuizModalOpen]);
+
+  useEffect(() => {
+    if (!isQuizModalOpen) return;
+    let cancelled = false;
+    const userId = getFirebaseClientAuth().currentUser?.uid;
+    void fetchQuizRecommendations(userId).then((items) => {
+      if (!cancelled) setQuizRecommendationsList(items);
+    }).catch((err) => console.error('Failed to load quiz recommendations for modal:', err));
+    return () => { cancelled = true; };
+  }, [isQuizModalOpen, isLoggedIn]);
+
+  // Hook for Quiz Gameplay State
+  const activeQuiz = useQuiz({
+    categoryId: quizSelectedCategoryId || '',
+    limit: 5,
+    userId: getFirebaseClientAuth().currentUser?.uid || undefined,
+    username: getFirebaseClientAuth().currentUser?.displayName || getFirebaseClientAuth().currentUser?.email?.split('@')[0] || 'Explorer'
+  });
+
+  // Timer Hook (30 seconds per question)
+  const timer = useTimer({
+    initialSeconds: 30,
+    onTimeUp: () => {
+      activeQuiz.loseLife();
+      activeQuiz.nextQuestion('');
+    }
+  });
+
+  // Start timer when gameplay starts inside modal
+  useEffect(() => {
+    if (activeQuiz.status === 'playing' && isQuizModalOpen) {
+      timer.reset(30);
+      timer.start();
+    } else {
+      timer.pause();
+    }
+  }, [activeQuiz.status, activeQuiz.currentIndex, isQuizModalOpen]);
+
+  const handleCloseQuizModal = () => {
+    setIsQuizModalOpen(false);
+    setQuizSelectedCategoryId(null);
+    activeQuiz.resetQuiz();
+    timer.pause();
+  };
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -1044,6 +1185,9 @@ export default function BookingWithChatBot() {
     if (messages.length === 0) return;
     const lastMessage = messages[messages.length - 1];
     if (lastMessage.from === 'bot' && config.voiceEnabled && config.autoReadChatbot) {
+      const messageKey = `${lastMessage.timestamp}:${lastMessage.text}`;
+      if (lastSpokenMessageRef.current === messageKey) return;
+      lastSpokenMessageRef.current = messageKey;
       speak(lastMessage.text);
     }
   }, [messages, config.voiceEnabled, config.autoReadChatbot, speak]);
@@ -1094,16 +1238,33 @@ export default function BookingWithChatBot() {
     loadProfile();
     window.addEventListener('user_profile_updated', loadProfile as EventListener);
 
+    // Show the chat immediately from locally available state. Firebase can
+    // reconcile the account in the background without blocking the first UI.
+    let hasStoredUser = false;
+    try {
+      hasStoredUser = Boolean(window.localStorage.getItem(AUTH_USER_KEY));
+    } catch {
+      hasStoredUser = false;
+    }
+    const existingSessionId = window.sessionStorage.getItem(CHAT_SESSION_KEY) || '';
+    const initialSessionId = getStableSessionIdFromLogin()
+      || existingSessionId
+      || encodeRtdbKey(makeSessionId());
+    window.sessionStorage.setItem(CHAT_SESSION_KEY, initialSessionId);
+    setSessionId(initialSessionId);
+    setIsLoggedIn(hasStoredUser);
+    setAuthChecked(true);
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       loadProfile();
-      let hasStoredUser = false;
+      let hasCurrentStoredUser = false;
       try {
-        hasStoredUser = Boolean(window.localStorage.getItem(AUTH_USER_KEY));
+        hasCurrentStoredUser = Boolean(window.localStorage.getItem(AUTH_USER_KEY));
       } catch {
-        hasStoredUser = false;
+        hasCurrentStoredUser = false;
       }
 
-      const loggedIn = Boolean(firebaseUser || hasStoredUser);
+      const loggedIn = Boolean(firebaseUser || hasCurrentStoredUser);
       setIsLoggedIn(loggedIn);
       setAuthChecked(true);
 
@@ -1257,7 +1418,7 @@ export default function BookingWithChatBot() {
       const category = normalizeMuseumText(museum.category);
 
       return (
-        (wanted && (name.includes(wanted) || wanted.includes(name) || location.includes(wanted) || state.includes(wanted) || category.includes(wanted))) ||
+        (wanted && (id.includes(wanted) || wanted.includes(id) || name.includes(wanted) || wanted.includes(name) || location.includes(wanted) || state.includes(wanted) || category.includes(wanted))) ||
         (!wanted && currentId && id === currentId) ||
         (!wanted && currentName && name === currentName)
       );
@@ -1496,21 +1657,21 @@ export default function BookingWithChatBot() {
     };
 
     setMessages((m) => [...m, msg]);
+
     setInput('');
     setSending(true);
 
     try {
       const response = await sendChatMessage(apiText.trim(), sessionId, language, await getChatAuthContext());
       const isSearchMuseums = response.intent === 'search_museums';
-      const museumOptions = isSearchMuseums
-        ? extractMuseumOptions(response.response || '')
-        : [];
+      const museumOptions = isSearchMuseums ? extractMuseumOptions(response.response || '') : [];
       const genericOptions = !isSearchMuseums
         ? extractGenericOptions(response.response || '')
         : [];
       const fullResponseText = response.response || '';
       const datePickerNeeded = shouldShowDatePicker(fullResponseText);
       const visitorPickerNeeded = !datePickerNeeded && shouldShowVisitorPicker(fullResponseText);
+      const quizAction = isQuizChatAction(response.action) ? response.action : undefined;
       const reply = {
         from: 'bot' as const,
         text: datePickerNeeded || visitorPickerNeeded
@@ -1520,7 +1681,11 @@ export default function BookingWithChatBot() {
         museumOptions: museumOptions.length > 0 ? museumOptions : undefined,
         genericOptions: (!datePickerNeeded && !visitorPickerNeeded && genericOptions.length > 0) ? genericOptions : undefined,
         showDatePicker: datePickerNeeded || undefined,
-        showVisitorPicker: visitorPickerNeeded || undefined
+        showVisitorPicker: visitorPickerNeeded || undefined,
+        virtualGuide: response.action?.type === 'virtual_guide'
+          ? { museumId: response.action.museumId, initialView: response.action.initialView }
+          : undefined,
+        quizAction
       };
 
       setMessages((m) => [...m, reply]);
@@ -1637,46 +1802,35 @@ export default function BookingWithChatBot() {
     const total = Object.values(combo).reduce((a, b) => a + b, 0);
     if (total === 0 || !sessionId) return;
 
-    // Build user-facing summary
+    // Submit the full selection in one turn so all categories are booked together.
     const parts = Object.entries(combo)
       .filter(([, count]) => count > 0)
-      .map(([type, count]) => `${count}× ${type}`);
+      .map(([type, count]) => `${count} ${type}`);
+    const comboMessage = parts.join(', ');
 
     setMessages((prev) => [
       ...prev,
-      { from: 'user', text: parts.join(', '), timestamp: new Date().toLocaleTimeString() }
+      { from: 'user', text: comboMessage, timestamp: new Date().toLocaleTimeString() }
     ]);
     setSending(true);
 
     try {
       const authContext = await getChatAuthContext();
-      // Step 1: send total ticket count
-      let lastResponse = await sendChatMessage(String(total), sessionId, language, authContext);
-      if (lastResponse.booking_data) {
-        setBookingData((prev) => ({ ...prev, ...(lastResponse.booking_data as BookingData) }));
+      const response = await sendChatMessage(comboMessage, sessionId, language, authContext);
+      if (response.booking_data) {
+        setBookingData((prev) => ({ ...prev, ...(response.booking_data as BookingData) }));
       }
 
-      // Step 2: send each visitor category
-      for (const [type, count] of Object.entries(combo)) {
-        if (count > 0) {
-          lastResponse = await sendChatMessage(`${count} ${type}`, sessionId, language, authContext);
-          if (lastResponse.booking_data) {
-            setBookingData((prev) => ({ ...prev, ...(lastResponse.booking_data as BookingData) }));
-          }
-        }
-      }
-
-      // Show only the final bot response
       setMessages((prev) => [
         ...prev,
         {
           from: 'bot',
-          text: cleanMessageText(lastResponse.response || translate(language, 'chat.noResponse')),
+          text: cleanMessageText(response.response || translate(language, 'chat.noResponse')),
           timestamp: new Date().toLocaleTimeString()
         }
       ]);
 
-      await handleChatAction(lastResponse);
+      await handleChatAction(response);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -1943,6 +2097,14 @@ export default function BookingWithChatBot() {
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
+              className="inline-flex items-center gap-1 rounded border border-emerald-600/35 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer"
+              onClick={() => setIsQuizModalOpen(true)}
+            >
+              <Gamepad2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              Play Quiz
+            </button>
+            <button
+              type="button"
               className="inline-flex items-center gap-1 rounded bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90"
               onClick={() => showPersonalizedRecommendations()}
               disabled={sending || confirming}
@@ -1985,9 +2147,22 @@ export default function BookingWithChatBot() {
 
         <div ref={chatContainerRef} className="mb-3 h-[70vh] min-h-[520px] max-h-[820px] overflow-auto rounded border p-3">
           {messages.map((m, i) => (
-            <div key={i} className={`mb-2 ${m.directionsMuseum || m.directionsOptions || m.recommendationMuseums ? 'w-full max-w-full' : 'max-w-[85%]'} ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
-              <div className={`inline-block whitespace-pre-line rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
-                {m.text}
+            <div key={i} className={`mb-2 ${m.directionsMuseum || m.directionsOptions || m.recommendationMuseums || m.virtualGuide ? 'w-full max-w-full' : 'max-w-[85%]'} ${m.from === 'bot' ? 'text-sm text-muted-foreground' : 'ml-auto text-right'}`}>
+              <div className={`inline-flex items-start gap-1 ${m.from === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`inline-block whitespace-pre-line rounded px-3 py-1 ${m.from === 'bot' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
+                  {m.text}
+                </div>
+                {m.from === 'bot' && (
+                  <button
+                    type="button"
+                    onClick={() => config.voiceEnabled ? speak(m.text) : openAccessibilitySettings()}
+                    className={`mt-0.5 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground ${config.voiceEnabled ? '' : 'opacity-40'}`}
+                    title={config.voiceEnabled ? 'Read this message aloud' : 'Enable Voice Guidance to hear messages'}
+                    aria-label={config.voiceEnabled ? 'Read this message aloud' : 'Open settings to enable text to speech'}
+                  >
+                    <Volume2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
               {m.qrDataUrl && m.qrBookingId && (
                 <div className="mt-2 inline-block rounded-lg border bg-white p-4 text-center">
@@ -2111,6 +2286,75 @@ export default function BookingWithChatBot() {
                     />
                   ))}
                 </div>
+              )}
+              {m.virtualGuide?.museumId ? (
+                <div className="mt-3 text-left text-foreground">
+                  <VirtualGuide
+                    museumId={m.virtualGuide.museumId}
+                    initialView={m.virtualGuide.initialView}
+                    compact
+                    onBook={() => void sendMessage('Book Tickets', `Book tickets for ${m.virtualGuide!.museumId}`)}
+                    onDirections={() => void showDirectionsForMuseum(m.virtualGuide!.museumId)}
+                  />
+                </div>
+              ) : null}
+              {m.quizAction?.type === 'quiz_categories' && (
+                <ChatbotQuizCategories
+                  categories={[
+                    { id: 'dinosaur', name: 'Dinosaur', icon: '🦖', color: 'from-emerald-400 to-green-600' },
+                    { id: 'ancient-india', name: 'Ancient India', icon: '🏺', color: 'from-amber-400 to-orange-655' },
+                    { id: 'space', name: 'Space', icon: '🚀', color: 'from-blue-500 to-indigo-750' },
+                    { id: 'paintings', name: 'Paintings', icon: '🎨', color: 'from-purple-500 to-pink-500' },
+                    { id: 'wildlife', name: 'Wildlife', icon: '🦁', color: 'from-orange-400 to-yellow-500' },
+                    { id: 'science', name: 'Science', icon: '🔬', color: 'from-cyan-400 to-teal-600' },
+                  ]}
+                  onSelect={(categoryName) => sendMessage(categoryName)}
+                />
+              )}
+              {m.quizAction?.type === 'quiz_question' && m.quizAction.options && (
+                <div className="mt-2 flex flex-wrap gap-1.5 w-full max-w-xs animate-in fade-in" data-bmt-no-translate>
+                  {m.quizAction.options.map((opt, optIdx) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => sendMessage(String.fromCharCode(65 + optIdx), opt)}
+                      className="px-4 py-2 border border-zinc-800 bg-zinc-900 text-xs font-bold text-white hover:bg-zinc-805 rounded-lg cursor-pointer transition-all hover:scale-102"
+                    >
+                      {String.fromCharCode(65 + optIdx)}
+                    </button>
+                  ))}
+                  <div className="flex gap-1.5 w-full mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => sendMessage('Hint')}
+                      className="px-3 py-1.5 border border-amber-500/20 bg-amber-500/5 text-[10px] font-bold text-amber-400 hover:bg-amber-500/10 rounded-lg cursor-pointer"
+                    >
+                      💡 Hint
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendMessage('Skip')}
+                      className="px-3 py-1.5 border border-zinc-800 bg-zinc-900 text-[10px] font-bold text-zinc-400 hover:bg-zinc-805 rounded-lg cursor-pointer"
+                    >
+                      Skip
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendMessage('End Quiz')}
+                      className="px-3 py-1.5 border border-red-500/20 bg-red-500/5 text-[10px] font-bold text-red-400 hover:bg-red-500/10 rounded-lg ml-auto cursor-pointer"
+                    >
+                      End Quiz
+                    </button>
+                  </div>
+                </div>
+              )}
+              {m.quizAction?.type === 'quiz_result' && (
+                <ChatbotQuizResult
+                  score={m.quizAction.score || '0/5'}
+                  badgeTitle={m.quizAction.badgeTitle}
+                  badgeImage={m.quizAction.badgeImage}
+                  onAction={(actionText) => sendMessage(actionText)}
+                />
               )}
               {m.museumOptions && (
                 <div className="mt-2 w-full max-w-xs">
@@ -2301,9 +2545,18 @@ export default function BookingWithChatBot() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !sending && send()}
             placeholder={translate(language, 'chat.placeholder')}
-            className="flex-1 rounded border px-3 py-2 bg-background text-foreground"
+            className="min-w-0 flex-1 rounded border bg-background px-3 py-2 text-foreground"
             disabled={sending}
           />
+          <button
+            type="button"
+            onClick={openAccessibilitySettings}
+            className="rounded border bg-background p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            title="Accessibility and text-to-speech settings (Alt + A)"
+            aria-label="Open accessibility and text-to-speech settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
           {config.speechToText && (
             <button
               type="button"
@@ -2325,6 +2578,278 @@ export default function BookingWithChatBot() {
         </div>
 
       </aside>
+
+      {/* Quiz Modal Overlay */}
+      <AnimatePresence>
+        {isQuizModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-4xl bg-zinc-950 border border-zinc-800 rounded-3xl p-6 md:p-10 shadow-2xl text-white my-8 max-h-[90vh] overflow-y-auto"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={handleCloseQuizModal}
+                className="absolute top-4 right-4 text-zinc-400 hover:text-white p-2 rounded-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition cursor-pointer"
+                aria-label="Close Quiz"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* View 1: Categories & Dashboard */}
+              {!quizSelectedCategoryId && (
+                <div>
+                  <div className="text-center mb-8 pr-8">
+                    <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/25 px-4 py-2 rounded-full text-blue-400 text-xs font-bold uppercase tracking-wider mb-3">
+                      <Sparkles className="w-4 h-4" /> Learn While You Play
+                    </div>
+                    <h2 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-200 to-purple-400 bg-clip-text text-transparent mb-1">
+                      🧩 Interactive Quiz
+                    </h2>
+                    <p className="text-zinc-400 text-sm">
+                      Become a Museum Explorer and earn premium rewards!
+                    </p>
+                  </div>
+
+                  {/* Recommendations */}
+                  {!quizLoading && quizRecommendationsList.length > 0 && (
+                    <QuizRecommendation
+                      recommendations={quizRecommendationsList}
+                      onPlay={(catId) => {
+                        setQuizSelectedCategoryId(catId);
+                        activeQuiz.resetQuiz();
+                        activeQuiz.loadQuiz(catId);
+                      }}
+                      reason={isLoggedIn ? "Suggested based on your museum ticket bookings" : undefined}
+                    />
+                  )}
+
+                  {/* Tabs */}
+                  <div className="flex border-b border-zinc-800 mb-6 gap-2 justify-center sm:justify-start">
+                    <button
+                      type="button"
+                      onClick={() => setQuizActiveTab('categories')}
+                      className={`py-2 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                        quizActiveTab === 'categories'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <BookOpen className="w-4 h-4" /> Categories
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuizActiveTab('badges')}
+                      className={`py-2 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                        quizActiveTab === 'badges'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Award className="w-4 h-4" /> My Badges
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuizActiveTab('leaderboard')}
+                      className={`py-2 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                        quizActiveTab === 'leaderboard'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Trophy className="w-4 h-4" /> Leaderboard
+                    </button>
+                  </div>
+
+                  {/* Tab Contents */}
+                  <AnimatePresence mode="wait">
+                    {quizLoading ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <div key={idx} className="h-48 bg-zinc-900 border border-zinc-850 rounded-2xl animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (
+                      <motion.div
+                        key={quizActiveTab}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        {quizActiveTab === 'categories' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {quizCategoriesList.map((cat) => (
+                              <QuizCard
+                                key={cat.id}
+                                category={cat}
+                                onWarmup={() => prefetchQuizQuestions(cat.id)}
+                                onPlay={() => {
+                                  setQuizSelectedCategoryId(cat.id);
+                                  activeQuiz.resetQuiz();
+                                  activeQuiz.loadQuiz(cat.id);
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {quizActiveTab === 'badges' && (
+                          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5">
+                            <QuizBadgeList
+                              badges={quizBadgesList}
+                              earnedBadgeIds={quizEarnedBadgeIds}
+                            />
+                          </div>
+                        )}
+
+                        {quizActiveTab === 'leaderboard' && (
+                          <QuizLeaderboard
+                            scores={quizLeaderboardList}
+                          />
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* View 2: Gameplay Canvas */}
+              {quizSelectedCategoryId && (
+                <div className="w-full mt-4">
+                  {/* Exit to Dash Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuizSelectedCategoryId(null);
+                      activeQuiz.resetQuiz();
+                      fetchQuizLeaderboard().then(setQuizLeaderboardList);
+                    }}
+                    className="flex items-center gap-1.5 text-zinc-400 hover:text-white font-bold text-xs mb-4 transition bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 px-3.5 py-1.5 rounded-xl cursor-pointer"
+                  >
+                    ← Exit to Categories
+                  </button>
+
+                  <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-inner relative overflow-hidden">
+                    {/* Instructions */}
+                    {activeQuiz.status === 'instructions' && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex flex-col items-center text-center py-4"
+                      >
+                        <span className="text-5xl mb-3">🎯</span>
+                        <h3 className="text-xl font-bold text-white mb-1">Quiz Instructions</h3>
+                        <p className="text-zinc-400 text-xs max-w-sm mb-4 leading-relaxed">
+                          Welcome, Explorer! Get ready to test your knowledge.
+                        </p>
+
+                        <div className="text-left w-full max-w-sm space-y-3 bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-xs text-zinc-300 mb-6">
+                          <div className="flex items-start gap-2">
+                            <span>🚀</span>
+                            <span><strong>5 Fun Questions:</strong> Answer multiple-choice, true/false, or artifact questions.</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span>⏱️</span>
+                            <span><strong>30s Timer:</strong> Answer each question before time runs out!</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span>❤️</span>
+                            <span><strong>3 Explorer Lives:</strong> Each wrong answer deducts a life. Keep them alive!</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={activeQuiz.startQuiz}
+                          className="px-6 py-3 bg-blue-600 hover:bg-blue-500 font-extrabold rounded-xl text-white text-xs shadow-lg shadow-blue-600/30 hover:scale-102 transition cursor-pointer"
+                        >
+                          Start Challenge!
+                        </button>
+                      </motion.div>
+                    )}
+
+                    {/* Submitting Loading State */}
+                    {activeQuiz.status === 'submitting' && (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-3" />
+                        <p className="text-zinc-400 text-sm font-semibold">Submitting answers to the Quiz Master...</p>
+                      </div>
+                    )}
+
+                    {/* Error State */}
+                    {activeQuiz.status === 'error' && (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <span className="text-3xl mb-2">⚠️</span>
+                        <p className="text-red-400 font-semibold mb-3 text-sm">{activeQuiz.error}</p>
+                        <button
+                          type="button"
+                          onClick={() => activeQuiz.loadQuiz()}
+                          className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 rounded-lg text-xs"
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Playing State */}
+                    {activeQuiz.status === 'playing' && activeQuiz.currentQuestion && (
+                      <div className="w-full">
+                        <div className="flex justify-between items-center gap-4 border-b border-zinc-800 pb-4 mb-4">
+                          <QuizProgress
+                            current={activeQuiz.currentIndex + 1}
+                            total={activeQuiz.questions.length}
+                            lives={activeQuiz.lives}
+                          />
+                          <QuizTimer
+                            duration={30}
+                            timeLeft={timer.timeLeft}
+                            isActive={timer.isActive}
+                          />
+                        </div>
+
+                        <QuizQuestion
+                          question={activeQuiz.currentQuestion}
+                          selectedAnswer={activeQuiz.answers[activeQuiz.currentQuestion.id] || null}
+                          onSelectAnswer={(opt) => activeQuiz.selectOption(opt)}
+                          onHint={activeQuiz.useHint}
+                          hintUsed={activeQuiz.hintsUsed[activeQuiz.currentQuestion.id] || false}
+                          onSkip={() => activeQuiz.nextQuestion('')}
+                          onNext={() => activeQuiz.nextQuestion()}
+                        />
+                      </div>
+                    )}
+
+                    {/* Results State */}
+                    {activeQuiz.status === 'results' && activeQuiz.result && (
+                      <QuizResult
+                        result={activeQuiz.result}
+                        categoryName={quizCategoriesList.find(c => c.id === quizSelectedCategoryId)?.name || ''}
+                        onRestart={() => activeQuiz.loadQuiz(quizSelectedCategoryId || undefined)}
+                        onChooseOther={() => {
+                          setQuizSelectedCategoryId(null);
+                          activeQuiz.resetQuiz();
+                          fetchQuizLeaderboard().then(setQuizLeaderboardList);
+                        }}
+                        onViewLeaderboard={() => {
+                          setQuizSelectedCategoryId(null);
+                          activeQuiz.resetQuiz();
+                          setQuizActiveTab('leaderboard');
+                          fetchQuizLeaderboard().then(setQuizLeaderboardList);
+                        }}
+                        isLoggedIn={isLoggedIn}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

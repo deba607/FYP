@@ -29,6 +29,7 @@ import {
   Ticket,
   Home,
   Landmark,
+  Gamepad2,
 } from 'lucide-react';
 
 const menuItems = [
@@ -39,6 +40,7 @@ const menuItems = [
   { title: 'Analytics', icon: BarChart3, href: '#analytics' },
   { title: 'Visitors', icon: Users, href: '#visitors' },
   { title: 'Activity', icon: Activity, href: '#activity' },
+  { title: 'Quiz Manager', icon: Gamepad2, href: '#quiz' },
 ];
 
 export const AdminSidebar = memo(() => {

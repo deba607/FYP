@@ -434,12 +434,286 @@ class MuseumAssistant:
         match = re.search(r"\b(?:BM|BK)\d+\b", text or "", re.IGNORECASE)
         return match.group(0).upper() if match else ""
 
+    def handle_quiz_conversation(self, message: str, session: Dict[str, Any], auth_context: Dict[str, Any]) -> Dict[str, Any]:
+        state = session.get("quiz_state")
+        lower_msg = message.strip().lower()
+        db = get_firestore_client() if get_firestore_client else None
+        
+        def get_cat_name(cid):
+            names = {
+                'dinosaur': 'Dinosaur Quiz 🦖',
+                'ancient-india': 'Ancient India 🏺',
+                'space': 'Space Gallery 🚀',
+                'paintings': 'Famous Paintings 🎨',
+                'wildlife': 'Wildlife Explorer 🦁',
+                'science': 'Science Museum 🔬'
+            }
+            return names.get(cid, cid.capitalize())
+
+        # Step 1: Category selection
+        if state["step"] == "choose_category":
+            category_id = None
+            if "dinosaur" in lower_msg or "dino" in lower_msg:
+                category_id = "dinosaur"
+            elif "ancient india" in lower_msg or "india" in lower_msg:
+                category_id = "ancient-india"
+            elif "space" in lower_msg or "galaxy" in lower_msg:
+                category_id = "space"
+            elif "painting" in lower_msg or "art" in lower_msg:
+                category_id = "paintings"
+            elif "wildlife" in lower_msg or "animal" in lower_msg or "lion" in lower_msg:
+                category_id = "wildlife"
+            elif "science" in lower_msg or "physics" in lower_msg or "chemistry" in lower_msg:
+                category_id = "science"
+
+            if not category_id:
+                return {
+                    "message": "I didn't quite get that category. Please select one of these categories:\n\n🦖 Dinosaur\n🏺 Ancient India\n🚀 Space\n🎨 Paintings\n🦁 Wildlife\n🔬 Science",
+                    "intent": "quiz",
+                    "action": {"type": "quiz_categories"}
+                }
+
+            # Retrieve questions from Firestore
+            questions = []
+            if db:
+                try:
+                    docs = db.collection("quizQuestions").where("category_id", "==", category_id).get()
+                    for doc in docs:
+                        qdata = doc.to_dict()
+                        qdata["id"] = doc.id
+                        questions.append(qdata)
+                except Exception as e:
+                    logger.warning("Failed to fetch quiz questions from Firestore: %s", e)
+            
+            # Local fallback questions in case Firestore fails or is not seeded
+            if not questions:
+                questions = [
+                    {
+                        "id": "fallback_q1",
+                        "question": "Which dinosaur was one of the largest land animals to ever live?",
+                        "options": ["Velociraptor", "Triceratops", "Argentinosaurus", "Stegosaurus"],
+                        "correctAnswer": "Argentinosaurus",
+                        "explanation": "Argentinosaurus weighed up to 100 tons!",
+                        "points": 10
+                    },
+                    {
+                        "id": "fallback_q2",
+                        "question": "Triceratops had three horns on its face for defense.",
+                        "options": ["True", "False"],
+                        "correctAnswer": "True",
+                        "explanation": "Triceratops brow horns were used for defense.",
+                        "points": 10
+                    }
+                ]
+            
+            # Shuffle and limit to 5 questions
+            import random
+            random.shuffle(questions)
+            questions = questions[:5]
+
+            state["category"] = category_id
+            state["questions"] = questions
+            state["step"] = "playing"
+            state["currentIndex"] = 0
+            state["score"] = 0
+            state["correctCount"] = 0
+            state["wrongCount"] = 0
+            state["lives"] = 3
+
+            first_q = questions[0]
+            options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(first_q["options"])])
+            
+            return {
+                "message": f"🦖 Welcome to the {get_cat_name(category_id)} Challenge!\n\nQuestion 1 of {len(questions)}:\n\n{first_q['question']}\n\n{options_text}",
+                "intent": "quiz",
+                "action": {
+                    "type": "quiz_question",
+                    "options": first_q["options"],
+                    "question_id": first_q["id"]
+                }
+            }
+
+        # Step 2: Answer evaluation
+        if state["step"] == "playing":
+            questions = state["questions"]
+            idx = state["currentIndex"]
+            curr_q = questions[idx]
+            
+            # Check commands
+            if lower_msg == "end quiz" or lower_msg == "skip":
+                if lower_msg == "skip":
+                    state["currentIndex"] += 1
+                    feedback = "⏩ Question skipped!"
+                else:
+                    state["lives"] = 0
+                    feedback = "⏹️ Quiz ended."
+            elif lower_msg == "hint":
+                state["hintsUsed"] = True
+                hint_msg = f"💡 Hint: Think about {curr_q.get('explanation', 'the options carefully')[:35]}..."
+                options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(curr_q["options"])])
+                return {
+                    "message": f"{hint_msg}\n\nQuestion {idx+1} of {len(questions)}:\n\n{curr_q['question']}\n\n{options_text}",
+                    "intent": "quiz",
+                    "action": {
+                        "type": "quiz_question",
+                        "options": curr_q["options"],
+                        "question_id": curr_q["id"]
+                    }
+                }
+            else:
+                # Process Answer
+                user_ans = None
+                options = curr_q["options"]
+                correct_ans = curr_q.get("correctAnswer", "")
+                
+                # Check if matches A, B, C, D
+                if len(lower_msg) == 1 and lower_msg in "abcd":
+                    opt_idx = ord(lower_msg) - ord('a')
+                    if opt_idx < len(options):
+                        user_ans = options[opt_idx]
+                else:
+                    # Check matching option text
+                    for opt in options:
+                        if opt.lower() in lower_msg or lower_msg in opt.lower():
+                            user_ans = opt
+                            break
+                
+                if not user_ans:
+                    options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
+                    return {
+                        "message": f"Please select a valid option (A, B, C, D) or select one of the buttons.\n\n{curr_q['question']}\n\n{options_text}",
+                        "intent": "quiz",
+                        "action": {
+                            "type": "quiz_question",
+                            "options": options,
+                            "question_id": curr_q["id"]
+                        }
+                    }
+
+                # Verify Answer
+                is_correct = user_ans.lower().strip() == correct_ans.lower().strip()
+                if is_correct:
+                    state["score"] += curr_q.get("points", 10)
+                    state["correctCount"] += 1
+                    feedback = f"✅ Correct!\n{curr_q.get('explanation', '')}\n+10 Points!"
+                else:
+                    state["lives"] -= 1
+                    state["wrongCount"] += 1
+                    feedback = f"❌ Incorrect.\nThe correct answer was: {correct_ans}.\n{curr_q.get('explanation', '')}\nLost 1 life! ❤️"
+                
+                state["currentIndex"] += 1
+
+            # Check if game continues
+            next_idx = state["currentIndex"]
+            if next_idx < len(questions) and state["lives"] > 0:
+                next_q = questions[next_idx]
+                options_text = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(next_q["options"])])
+                hearts = "❤️" * state["lives"]
+                
+                return {
+                    "message": f"{feedback}\n\n-------------------------\n{hearts}\n\nQuestion {next_idx+1} of {len(questions)}:\n\n{next_q['question']}\n\n{options_text}",
+                    "intent": "quiz",
+                    "action": {
+                        "type": "quiz_question",
+                        "options": next_q["options"],
+                        "question_id": next_q["id"]
+                    }
+                }
+            else:
+                # Quiz Game Over!
+                total_qs = len(questions)
+                corrects = state["correctCount"]
+                score_pct = int((corrects / total_qs) * 100)
+                
+                # Badges Logic
+                badge_ids = []
+                if score_pct >= 50:
+                    badge_ids.append("explorer")
+                if score_pct == 100:
+                    badge_ids.append("quiz_champion")
+                if score_pct >= 80:
+                    cat = state["category"]
+                    if cat == "dinosaur":
+                        badge_ids.append("dino_expert")
+                    elif cat == "ancient-india":
+                        badge_ids.append("history_master")
+                    elif cat in ("science", "space"):
+                        badge_ids.append("science_genius")
+
+                badge_map = {
+                    "explorer": ("🧭 Museum Explorer", "🧭"),
+                    "dino_expert": ("🦖 Dinosaur Expert", "🦖"),
+                    "history_master": ("🏺 History Master", "🏺"),
+                    "science_genius": ("🚀 Science Genius", "🚀"),
+                    "quiz_champion": ("🏆 Quiz Champion", "🏆")
+                }
+                
+                earned_badge_text = "None"
+                badge_title = None
+                badge_img = None
+                if badge_ids:
+                    badge_titles = [badge_map.get(bid, (bid, "🏅"))[0] for bid in badge_ids]
+                    earned_badge_text = ", ".join(badge_titles)
+                    top_badge_id = badge_ids[-1]
+                    badge_title, badge_img = badge_map.get(top_badge_id, (top_badge_id, "🏅"))
+
+                # Save score to Firestore if user ID available
+                user_ctx = auth_context or session.get("user") or {}
+                user_id = user_ctx.get("userId") or user_ctx.get("id")
+                if user_id and db:
+                    try:
+                        score_ref = db.collection("quizScores").document()
+                        score_record = {
+                            "score_id": score_ref.id,
+                            "userId": user_id,
+                            "username": user_ctx.get("email", "").split("@")[0] or "Explorer",
+                            "score": score_pct,
+                            "correctAnswers": corrects,
+                            "wrongAnswers": state["wrongCount"],
+                            "category": state["category"],
+                            "earnedBadges": badge_ids,
+                            "completedAt": __import__('datetime').datetime.utcnow().isoformat() + "Z"
+                        }
+                        score_ref.set(score_record)
+
+                        if badge_ids:
+                            user_ref = db.collection("users").document(user_id)
+                            user_doc = user_ref.get()
+                            if user_doc.exists:
+                                from firebase_admin import firestore
+                                user_ref.update({
+                                    "earnedBadges": firestore.FieldValue.arrayUnion(*badge_ids)
+                                })
+                    except Exception as err:
+                        logger.warning("Failed to save conversational quiz score to Firestore: %s", err)
+
+                # Reset state
+                session.pop("quiz_state", None)
+
+                congrats = "🎉 Congratulations! You completed the quiz." if score_pct >= 60 else "👍 Good try! Play again to beat your score."
+                msg_txt = f"{feedback}\n\n-------------------------\n{congrats}\n\nYour Score: {corrects}/{total_qs} ({score_pct}%)\n🏆 Earned Badges: {earned_badge_text}\n\nWhat would you like to do next?"
+                
+                return {
+                    "message": msg_txt,
+                    "intent": "quiz",
+                    "action": {
+                        "type": "quiz_result",
+                        "score": f"{corrects}/{total_qs}",
+                        "badgeTitle": badge_title,
+                        "badgeImage": badge_img
+                    }
+                }
+
     def process_message(self, message: str, session_id: str = "default", language: str = "en", auth_context: Dict[str, Any] = None) -> Dict[str, Any]:
         session = self.get_or_create_session(session_id)
         session["language"] = language
         auth_context = auth_context or {}
         self.sync_auth_context(session, auth_context)
         is_logged_in = self.is_authenticated(session, auth_context)
+
+        # Check active quiz conversation
+        if "quiz_state" in session and session["quiz_state"].get("active"):
+            return self.handle_quiz_conversation(message, session, auth_context)
 
         # Auto-refresh museum cache on first query if empty to support fuzzy/fallback queries
         if not self.museums_data:
@@ -472,6 +746,25 @@ class MuseumAssistant:
         if self.is_museum_list_query(message):
             intent = "search_museums"
 
+        if intent == "quiz":
+            session["quiz_state"] = {
+                "active": True,
+                "step": "choose_category",
+                "category": None,
+                "questions": [],
+                "currentIndex": 0,
+                "score": 0,
+                "correctCount": 0,
+                "wrongCount": 0,
+                "lives": 3,
+                "hintsUsed": False
+            }
+            return {
+                "message": "Hello Explorer! 🤠 Welcome to the Museum Trivia Challenge!\n\nWhich quiz category would you like to play today?\n\n🦖 Dinosaur\n🏺 Ancient India\n🚀 Space\n🎨 Paintings\n🦁 Wildlife\n🔬 Science",
+                "intent": "quiz",
+                "action": {"type": "quiz_categories"}
+            }
+
         if intent == "help":
             return self.help_response(is_logged_in)
 
@@ -500,6 +793,47 @@ class MuseumAssistant:
                 "intent": "show_ticket_by_id",
                 "booking_data": session.get("booking_data", {}),
                 "action": {"type": "show_ticket_by_id", "bookingId": booking_id}
+            }
+
+        if intent == "virtual_guide":
+            museum = self.extract_museum_from_text(message)
+            booking_data = session.get("booking_data", {})
+            if not museum and (booking_data.get("museumId") or booking_data.get("museum_id") or booking_data.get("museumName") or booking_data.get("museum_name")):
+                wanted_id = str(booking_data.get("museumId") or booking_data.get("museum_id") or "").strip().lower()
+                wanted_name = str(booking_data.get("museumName") or booking_data.get("museum_name") or "").strip().lower()
+                museum = next((item for item in self.museums_data if (
+                    str(item.get("museum_id") or item.get("id") or "").strip().lower() == wanted_id or
+                    str(item.get("name") or "").strip().lower() == wanted_name
+                )), None)
+                if not museum and (wanted_id or wanted_name):
+                    museum = {
+                        "museum_id": booking_data.get("museumId") or booking_data.get("museum_id") or "",
+                        "id": booking_data.get("museumId") or booking_data.get("museum_id") or "",
+                        "name": booking_data.get("museumName") or booking_data.get("museum_name") or "Selected museum",
+                        "location": booking_data.get("museumLocation") or booking_data.get("museum_location") or "",
+                        "category": booking_data.get("museumCategory") or booking_data.get("museum_category") or "Museum",
+                    }
+
+            if not museum:
+                return {
+                    "message": "Which museum would you like to explore virtually? Tell me the museum name, then I can open its videos, gallery, artifacts, and history here.",
+                    "intent": "virtual_guide",
+                    "booking_data": booking_data,
+                }
+
+            museum_id = museum.get("museum_id") or museum.get("id") or ""
+            museum_name = museum.get("name") or "Museum"
+            lower_message = message.lower()
+            initial_view = "gallery" if any(word in lower_message for word in ("gallery", "image", "photo", "artifact", "exhibit")) else "history" if "history" in lower_message else "videos" if any(word in lower_message for word in ("video", "tour", "documentary", "inside", "virtually")) else "overview"
+            return {
+                "message": f"Welcome to the virtual guide for {museum_name}. Explore its embedded videos, photo gallery, highlights, and history below. You can continue booking or open directions without leaving this chat.",
+                "intent": "virtual_guide",
+                "booking_data": booking_data,
+                "action": {
+                    "type": "virtual_guide",
+                    "museumId": museum_id,
+                    "initialView": initial_view,
+                }
             }
 
         if intent in ["museum_info", "pricing", "discount"]:
@@ -887,12 +1221,35 @@ class MuseumAssistant:
         return deduped
 
     def ensure_booking_museum_details(self, session: Dict[str, Any], message: str, language: str = "en") -> Dict[str, Any]:
-        """Require a Firestore museum before date/time/ticket collection continues."""
+        """Require a museum and allow an existing booking's museum to be replaced."""
         booking_data = session.setdefault("booking_data", {})
-        if booking_data.get("museum_name") or booking_data.get("museumName"):
+        current_museum = booking_data.get("museum_name") or booking_data.get("museumName")
+        waiting_for_choice = bool(session.get("waiting_for_booking_museum_choice"))
+        normalized_message = re.sub(r"[^a-z0-9 ]+", " ", str(message or "").lower())
+        normalized_message = re.sub(r"\s+", " ", normalized_message).strip()
+        explicitly_mentions_museum = bool(re.search(r"\bmuseums?\b", normalized_message))
+        explicitly_requests_change = bool(re.search(
+            r"\b(change|switch|replace|different|another|instead)\b",
+            normalized_message,
+        ))
+        includes_booking_target = bool(re.search(
+            r"\b(book|booking|reserve|buy|purchase|ticket|tickets)\b.*\b(for|at|in)\b",
+            normalized_message,
+        ))
+        should_check_for_replacement = (
+            waiting_for_choice
+            or explicitly_mentions_museum
+            or explicitly_requests_change
+            or includes_booking_target
+        )
+
+        # Normal date/time/visitor replies must continue through BookingHandler.
+        if current_museum and not should_check_for_replacement:
             return None
 
         if not self.has_booking_museum_search_text(message):
+            if current_museum:
+                return None
             return {
                 "message": "Which museum would you like to book? Please type the museum name or a city/location, for example: `book ticket in Kolkata`.",
                 "intent": "book_ticket",
@@ -903,18 +1260,26 @@ class MuseumAssistant:
         exact_match = self.find_exact_museum_match(message, matches)
         if exact_match:
             self.apply_museum_to_booking_data(booking_data, exact_match)
+            session["waiting_for_booking_museum_choice"] = False
             return None
 
         if len(matches) == 1:
             self.apply_museum_to_booking_data(booking_data, matches[0])
+            session["waiting_for_booking_museum_choice"] = False
             return None
 
         if len(matches) > 1:
+            session["waiting_for_booking_museum_choice"] = True
             return {
                 "message": self.format_booking_museum_choices(matches),
                 "intent": "book_ticket",
                 "booking_data": booking_data,
             }
+
+        # A phrase such as "ticket for tomorrow" is a booking detail, not a
+        # failed museum switch. Only reject explicit museum/change requests.
+        if current_museum and not (waiting_for_choice or explicitly_mentions_museum or explicitly_requests_change):
+            return None
 
         return {
             "message": "I could not find that museum in Firestore. Please enter a museum name or location from the museum collection.",
@@ -946,6 +1311,9 @@ class MuseumAssistant:
             "museumId": museum_id,
             "museumCategory": category,
         })
+        # Any previous confirmation applied to the old museum and is no longer valid.
+        booking_data.pop("ready_to_confirm", None)
+        booking_data.pop("confirmed", None)
 
     def has_booking_museum_search_text(self, message: str) -> bool:
         """Return true only when the booking message contains a museum/location clue."""

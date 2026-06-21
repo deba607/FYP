@@ -44,7 +44,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, location, state, category, prices, description, imageUrl, loginEmail, loginPassword } = body;
+    const { name, location, state, category, prices, description, history, highlights, imageUrl, imageUrls, videoUrl, videoUrls, loginEmail, loginPassword } = body;
     
     const result = await registerMuseum({
       name,
@@ -53,7 +53,12 @@ export async function POST(req: NextRequest) {
       category,
       prices,
       description,
+      history,
+      highlights,
       imageUrl,
+      imageUrls,
+      videoUrl,
+      videoUrls,
       loginEmail,
       loginPassword
     });

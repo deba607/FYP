@@ -16,6 +16,7 @@ type TranslationKey =
   | 'nav.contact'
   | 'nav.about'
   | 'nav.admin'
+  | 'nav.quiz'
   | 'brand.tagline'
   | 'auth.signIn'
   | 'auth.signOut'
@@ -72,6 +73,7 @@ const dictionary: Record<LanguageCode, Record<TranslationKey, string>> = {
     'nav.contact': 'Contact',
     'nav.about': 'About Us',
     'nav.admin': 'Admin',
+    'nav.quiz': 'Play Quiz',
     'brand.tagline': 'Ticketing Made Easy',
     'auth.signIn': 'Sign In',
     'auth.signOut': 'Sign Out',
@@ -127,6 +129,7 @@ const dictionary: Record<LanguageCode, Record<TranslationKey, string>> = {
     'nav.contact': 'संपर्क',
     'nav.about': 'हमारे बारे में',
     'nav.admin': 'एडमिन',
+    'nav.quiz': 'क्विज खेलें',
     'brand.tagline': 'टिकटिंग आसान',
     'auth.signIn': 'साइन इन',
     'auth.signOut': 'साइन आउट',
@@ -182,6 +185,7 @@ const dictionary: Record<LanguageCode, Record<TranslationKey, string>> = {
     'nav.contact': 'যোগাযোগ',
     'nav.about': 'আমাদের সম্পর্কে',
     'nav.admin': 'অ্যাডমিন',
+    'nav.quiz': 'কুইজ খেলুন',
     'brand.tagline': 'সহজ টিকিটিং',
     'auth.signIn': 'সাইন ইন',
     'auth.signOut': 'সাইন আউট',
@@ -237,6 +241,7 @@ const dictionary: Record<LanguageCode, Record<TranslationKey, string>> = {
     'nav.contact': 'தொடர்பு',
     'nav.about': 'எங்களை பற்றி',
     'nav.admin': 'நிர்வாகம்',
+    'nav.quiz': 'வினாடி வினா',
     'brand.tagline': 'எளிய டிக்கெட் பதிவு',
     'auth.signIn': 'உள்நுழை',
     'auth.signOut': 'வெளியேறு',

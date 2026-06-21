@@ -34,6 +34,20 @@ import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 
 import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
+import MuseumMediaUploader from '../../components/museums/MuseumMediaUploader';
+import dynamic from 'next/dynamic';
+
+const QuizAdminManager = dynamic(
+  () => import('../../components/Quiz/QuizAdminManager'),
+  { 
+    loading: () => (
+      <div className="p-8 text-center flex flex-col items-center justify-center min-h-[300px]">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mb-2" />
+        <span className="text-sm text-muted-foreground font-medium">Loading Quiz Manager...</span>
+      </div>
+    ) 
+  }
+);
 
 type Booking = {
   id?: string;
@@ -186,7 +200,11 @@ export default function AdminDashboardPage() {
   const [museumCategory, setMuseumCategory] = useState('');
   const [museumPrice, setMuseumPrice] = useState(200); // base price compat
   const [museumDescription, setMuseumDescription] = useState('');
+  const [museumHistory, setMuseumHistory] = useState('');
+  const [museumHighlights, setMuseumHighlights] = useState('');
   const [museumImageUrl, setMuseumImageUrl] = useState('');
+  const [museumImageUrls, setMuseumImageUrls] = useState<string[]>([]);
+  const [museumVideoUrls, setMuseumVideoUrls] = useState<string[]>([]);
 
   // Category pricing states
   const [priceAdult, setPriceAdult] = useState(200);
@@ -209,7 +227,6 @@ export default function AdminDashboardPage() {
 
   // OTP Verification states for Museum Registration
   const [isEmailVerified, setIsEmailVerified] = useState(false);
-  const [originalEmail, setOriginalEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
@@ -238,13 +255,16 @@ export default function AdminDashboardPage() {
     setPriceProfessor(180);
     setPriceResearcher(180);
     setMuseumDescription('');
+    setMuseumHistory('');
+    setMuseumHighlights('');
     setMuseumImageUrl('');
+    setMuseumImageUrls([]);
+    setMuseumVideoUrls([]);
     setLoginEmail('');
     setLoginPassword('');
     setConfirmPassword('');
     setShowAdminPassword(false);
     setShowConfirmPassword(false);
-    setOriginalEmail('');
     setIsEmailVerified(false);
     setIsOtpSent(false);
     setOtpCode('');
@@ -359,7 +379,11 @@ export default function AdminDashboardPage() {
           state: museumState,
           category: museumCategory,
           description: museumDescription,
+          history: museumHistory,
+          highlights: museumHighlights.split('\n').map((item) => item.trim()).filter(Boolean),
           imageUrl: museumImageUrl,
+          imageUrls: museumImageUrls,
+          videoUrls: museumVideoUrls,
           loginEmail: loginEmail.trim() || undefined,
           loginPassword: loginPassword || undefined,
           prices: {
@@ -398,19 +422,6 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    // Validate login credentials if provided/updated
-    if (loginEmail.trim()) {
-      if (!loginEmail.includes('@') || !loginEmail.includes('.')) {
-        setMuseumsError('Please enter a valid email address for Login ID.');
-        return;
-      }
-      const isEmailChanged = loginEmail.trim().toLowerCase() !== originalEmail.toLowerCase();
-      if (isEmailChanged && !isEmailVerified) {
-        setMuseumsError('Please verify the new supervisor login email address using the verification code before updating.');
-        return;
-      }
-    }
-
     if (loginPassword || confirmPassword) {
       if (loginPassword !== confirmPassword) {
         setMuseumsError('Passwords do not match.');
@@ -424,16 +435,22 @@ export default function AdminDashboardPage() {
 
     try {
       setMuseumsLoading(true);
+      const token = await getFirebaseClientAuth().currentUser?.getIdToken();
+      if (!token) throw new Error('Please sign in again before updating a museum.');
       const res = await fetch(`/api/museums/${editingId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: museumName,
           location: museumLocation,
           state: museumState,
           category: museumCategory,
           description: museumDescription,
+          history: museumHistory,
+          highlights: museumHighlights.split('\n').map((item) => item.trim()).filter(Boolean),
           imageUrl: museumImageUrl,
+          imageUrls: museumImageUrls,
+          videoUrls: museumVideoUrls,
           loginEmail: loginEmail.trim() || undefined,
           loginPassword: loginPassword || undefined,
           prices: {
@@ -473,9 +490,12 @@ export default function AdminDashboardPage() {
     setMuseumState(museum.state || '');
     setMuseumCategory(museum.category || '');
     setMuseumDescription(museum.description || '');
+    setMuseumHistory(museum.history || '');
+    setMuseumHighlights(Array.isArray(museum.highlights) ? museum.highlights.join('\n') : '');
     setMuseumImageUrl(museum.imageUrl || '');
+    setMuseumImageUrls(Array.isArray(museum.imageUrls) && museum.imageUrls.length ? museum.imageUrls : museum.imageUrl ? [museum.imageUrl] : []);
+    setMuseumVideoUrls(Array.isArray(museum.videoUrls) && museum.videoUrls.length ? museum.videoUrls : museum.videoUrl ? [museum.videoUrl] : []);
     setLoginEmail(museum.loginEmail || '');
-    setOriginalEmail(museum.loginEmail || '');
     setIsEmailVerified(!!museum.loginEmail);
     setIsOtpSent(false);
     setOtpCode('');
@@ -668,7 +688,7 @@ export default function AdminDashboardPage() {
     if (typeof window === 'undefined') return;
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      if (hash && ['dashboard', 'bookings', 'users', 'analytics', 'visitors', 'activity', 'museums'].includes(hash)) {
+      if (hash && ['dashboard', 'bookings', 'users', 'analytics', 'visitors', 'activity', 'museums', 'quiz'].includes(hash)) {
         setActiveSection(hash);
       } else {
         setActiveSection('dashboard');
@@ -1558,6 +1578,16 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <div>
+                      <label htmlFor="form-museum-history" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Museum History</label>
+                      <textarea id="form-museum-history" rows={4} value={museumHistory} onChange={(event) => setMuseumHistory(event.target.value)} placeholder="Origin, milestones, and cultural significance..." className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-hidden focus:ring-2 focus:ring-emerald-500/20" />
+                    </div>
+
+                    <div>
+                      <label htmlFor="form-museum-highlights" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Visitor Highlights</label>
+                      <textarea id="form-museum-highlights" rows={3} value={museumHighlights} onChange={(event) => setMuseumHighlights(event.target.value)} placeholder={'One highlight per line\nFamous artifacts\nGallery walkthrough'} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-hidden focus:ring-2 focus:ring-emerald-500/20" />
+                    </div>
+
+                    <div>
                       <label htmlFor="form-museum-image-url" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                         Image URL (Optional)
                       </label>
@@ -1570,6 +1600,17 @@ export default function AdminDashboardPage() {
                         className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-hidden focus:ring-2 focus:ring-emerald-500/20"
                       />
                     </div>
+
+                    <MuseumMediaUploader
+                      imageUrls={museumImageUrls}
+                      videoUrls={museumVideoUrls}
+                      disabled={museumsLoading}
+                      onChange={({ imageUrls, videoUrls }) => {
+                        setMuseumImageUrls(imageUrls);
+                        setMuseumVideoUrls(videoUrls);
+                        setMuseumImageUrl(imageUrls[0] || '');
+                      }}
+                    />
 
                     {/* Museum Login Credentials Section */}
                     <div className="rounded-xl border p-4 bg-muted/20 space-y-4">
@@ -1589,22 +1630,20 @@ export default function AdminDashboardPage() {
                             id="login-email"
                             type="email"
                             value={loginEmail}
+                            readOnly={formMode === 'edit'}
                             onChange={(e) => {
+                              if (formMode === 'edit') return;
                               const val = e.target.value;
                               setLoginEmail(val);
-                              if (formMode === 'edit') {
-                                setIsEmailVerified(val.trim().toLowerCase() === originalEmail.toLowerCase());
-                              } else {
-                                setIsEmailVerified(false);
-                              }
+                              setIsEmailVerified(false);
                               setIsOtpSent(false);
                               setOtpSuccess('');
                               setOtpError('');
                             }}
                             placeholder="museum-admin@example.com"
-                            className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs outline-hidden focus:ring-2 focus:ring-emerald-500/20"
+                            className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs outline-hidden focus:ring-2 focus:ring-emerald-500/20 read-only:cursor-not-allowed read-only:bg-muted read-only:text-muted-foreground"
                           />
-                          {loginEmail.trim() && (
+                          {formMode === 'register' && loginEmail.trim() && (
                             <button
                               type="button"
                               onClick={handleSendOtp}
@@ -1658,7 +1697,7 @@ export default function AdminDashboardPage() {
                         <p className="text-[10px] text-muted-foreground mt-1">
                           {formMode === 'register' 
                             ? "Provide an email to automatically create a museum supervisor account." 
-                            : "Updating this email will update the supervisor account login ID."}
+                            : "The registered login email is permanent and cannot be edited."}
                         </p>
                       </div>
                       
@@ -2179,6 +2218,11 @@ export default function AdminDashboardPage() {
                 </table>
               </div>
             </section>
+          )}
+
+          {/* ── Quiz Manager tab ── */}
+          {activeSection === 'quiz' && (
+            <QuizAdminManager />
           )}
         </section>
       </SidebarInset>

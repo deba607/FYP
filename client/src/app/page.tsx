@@ -5,6 +5,7 @@ import { Skiper54 } from '../components/ui/skiper-ui/skiper54';
 import BookingBlock from '../components/booking/BookingBlock';
 import PersonalizedHomeLoader from '../components/personalized/PersonalizedHomeLoader';
 import CrowdHomeLoader from '../components/crowd/CrowdHomeLoader';
+import QuizHomeBanner from '../components/Quiz/QuizHomeBanner';
 
 export default function HomePage() {
   return (
@@ -18,6 +19,7 @@ export default function HomePage() {
       <BookingBlock />
       <PersonalizedHomeLoader />
       <CrowdHomeLoader />
+      <QuizHomeBanner />
       <Skiper54 />
       <Faq2 />
       <InteractiveTooltip />

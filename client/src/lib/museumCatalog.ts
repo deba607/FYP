@@ -15,7 +15,12 @@ export type MuseumCatalogItem = {
     'Researcher/Scientist': number;
   };
   description?: string;
+  history?: string;
+  highlights?: string[];
   imageUrl?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  videoUrls?: string[];
   virtualTourUrl?: string;
   latitude?: number;
   longitude?: number;

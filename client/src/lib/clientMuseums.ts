@@ -10,6 +10,9 @@ type FirestoreValue = {
   mapValue?: {
     fields?: Record<string, FirestoreValue>;
   };
+  arrayValue?: {
+    values?: FirestoreValue[];
+  };
 };
 
 type FirestoreDocument = {
@@ -27,6 +30,12 @@ function getNumber(fields: Record<string, FirestoreValue>, key: string, fallback
   if (typeof value.doubleValue === 'number') return value.doubleValue;
   if (value.integerValue) return Number(value.integerValue);
   return fallback;
+}
+
+function getStringArray(fields: Record<string, FirestoreValue>, key: string) {
+  return (fields[key]?.arrayValue?.values || [])
+    .map((value) => String(value.stringValue || '').trim())
+    .filter(Boolean);
 }
 
 function getMapNumber(fields: Record<string, FirestoreValue>, mapKey: string, valueKey: string, fallback: number) {
@@ -50,6 +59,11 @@ function normalizeMuseum(doc: FirestoreDocument): ClientMuseum | null {
 
   const price = getNumber(fields, 'price', 200);
 
+  const imageUrl = getString(fields, 'imageUrl');
+  const videoUrl = getString(fields, 'videoUrl');
+  const imageUrls = Array.from(new Set([imageUrl, ...getStringArray(fields, 'imageUrls')].filter(Boolean)));
+  const videoUrls = Array.from(new Set([videoUrl, ...getStringArray(fields, 'videoUrls')].filter(Boolean)));
+
   return {
     id: docId,
     museum_id: getString(fields, 'museum_id') || docId,
@@ -67,7 +81,12 @@ function normalizeMuseum(doc: FirestoreDocument): ClientMuseum | null {
       'Researcher/Scientist': getMapNumber(fields, 'prices', 'Researcher/Scientist', Math.round(price * 0.9))
     },
     description: getString(fields, 'description') || undefined,
-    imageUrl: getString(fields, 'imageUrl') || undefined,
+    history: getString(fields, 'history') || undefined,
+    highlights: getStringArray(fields, 'highlights'),
+    imageUrl: imageUrl || imageUrls[0] || undefined,
+    imageUrls,
+    videoUrl: videoUrl || videoUrls[0] || undefined,
+    videoUrls,
     virtualTourUrl: getString(fields, 'virtualTourUrl') || undefined,
     latitude: fields.latitude ? getNumber(fields, 'latitude') : undefined,
     longitude: fields.longitude ? getNumber(fields, 'longitude') : undefined,

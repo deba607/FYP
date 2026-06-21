@@ -18,6 +18,20 @@ class ProductionIntentDetector:
         lower = text.lower()
         booking_id = self.extract_booking_id(text)
 
+        virtual_guide_phrases = (
+            "virtual tour", "virtual guide", "museum video", "watch video", "show video",
+            "gallery", "museum images", "show exhibits", "show artifacts", "take me inside",
+            "visit virtually", "historical video", "museum documentary", "museum history"
+        )
+        if any(phrase in lower for phrase in virtual_guide_phrases):
+            return IntentResult("virtual_guide", {}, 0.95)
+
+        if (
+            re.search(r"\b(change|switch|replace|different|another)\b", lower)
+            and re.search(r"\bmuseums?\b", lower)
+        ):
+            return IntentResult("book_ticket", {}, 0.95)
+
         if any(key in lower for key in ("cancel", "refund")):
             return IntentResult("cancel_ticket", {"bookingId": booking_id}, 0.95)
 
@@ -47,6 +61,9 @@ class ProductionIntentDetector:
 
         if any(key in lower for key in ("book", "reserve", "buy ticket", "purchase ticket")):
             return IntentResult("book_ticket", {}, 0.9)
+
+        if any(key in lower for key in ("quiz", "trivia", "challenge", "ask me", "play again", "choose category", "dinosaur quiz", "science quiz", "history quiz", "space quiz", "painting quiz", "kids quiz")):
+            return IntentResult("quiz", {}, 0.95)
 
         if any(key in lower for key in ("faq", "question", "help", "what can you do")):
             return IntentResult("faq", {}, 0.7)

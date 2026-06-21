@@ -31,6 +31,7 @@ import { ref, onValue, query as databaseQuery, orderByChild, limitToLast } from 
 import { onAuthStateChanged } from 'firebase/auth';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 import CrowdInsightsPanel from '../../components/crowd/CrowdInsightsPanel';
+import MuseumProfileEditor, { type EditableMuseum } from '../../components/museums/MuseumProfileEditor';
 
 type ControllerDevice = {
   id: string;
@@ -74,14 +75,7 @@ type Booking = {
   createdAt: string;
 };
 
-type MuseumRecord = {
-  id: string;
-  museum_id: string;
-  name: string;
-  location: string;
-  state?: string;
-  loginEmail?: string;
-};
+type MuseumRecord = EditableMuseum;
 
 type VisitorStat = {
   email: string;
@@ -177,7 +171,7 @@ export default function MuseumDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'visitors' | 'controllers' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'profile' | 'bookings' | 'visitors' | 'controllers' | 'logs'>('overview');
   const [detailModal, setDetailModal] = useState<DetailModalKind | null>(null);
 
   // Register Form State
@@ -932,7 +926,7 @@ export default function MuseumDashboardPage() {
           {/* Tab Navigation */}
           <div className="mb-6 border-b border-border/80 flex items-center justify-between">
             <div className="flex gap-4">
-              {(['overview', 'bookings', 'visitors', 'controllers', 'logs'] as const).map((tab) => (
+              {(['overview', 'profile', 'bookings', 'visitors', 'controllers', 'logs'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => {
@@ -951,7 +945,7 @@ export default function MuseumDashboardPage() {
             </div>
             
             {/* Search Input for Controllers/Logs tab */}
-            {activeTab !== 'overview' && (
+            {activeTab !== 'overview' && activeTab !== 'profile' && (
               <div className="relative mb-2 w-64">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
@@ -1147,6 +1141,25 @@ export default function MuseumDashboardPage() {
                     </div>
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'profile' && currentMuseum && (
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+              >
+                <MuseumProfileEditor
+                  museum={currentMuseum}
+                  onUpdated={(updatedMuseum) => {
+                    setMuseums((current) => current.map((museum) => (
+                      museum.id === updatedMuseum.id ? { ...museum, ...updatedMuseum } : museum
+                    )));
+                  }}
+                />
               </motion.div>
             )}
 

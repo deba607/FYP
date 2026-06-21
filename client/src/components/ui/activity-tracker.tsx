@@ -39,6 +39,7 @@ export function trackClientEvent(
   fetch('/api/activity/track', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
     body: JSON.stringify(payload)
   }).catch((err) => {
     // Fail silently in production
@@ -70,7 +71,11 @@ export function ActivityTracker() {
       else if (pathname === '/museum-dashboard') pageLabel = 'Museum Supervisor Dashboard';
       else if (pathname === '/controller-dashboard') pageLabel = 'Gate Entry Dashboard';
 
-      trackClientEvent('Navigation', 'page_view', `Visited ${pageLabel}`);
+      const timeoutId = window.setTimeout(() => {
+        trackClientEvent('Navigation', 'page_view', `Visited ${pageLabel}`);
+      }, 750);
+
+      return () => window.clearTimeout(timeoutId);
     }
   }, [pathname]);
 

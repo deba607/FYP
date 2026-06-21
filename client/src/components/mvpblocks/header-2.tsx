@@ -11,57 +11,50 @@ import { usePathname, useRouter } from 'next/navigation';
 import { translate } from '../../lib/i18n';
 import { useLanguage } from '../../hooks/use-language';
 import { LanguageSelector } from '../ui/language-selector';
-
-import { ModeToggle } from './mode-toggle'
+import { ModeToggle } from './mode-toggle';
 import { trackClientEvent } from '../ui/activity-tracker';
 import { getDashboardLinksForRole } from '../../lib/dashboardAccess';
 import { subscribeToFirestoreUser } from '../../lib/firestoreUser';
 import { getSiteTranslation } from '../../lib/site-translations';
 
-interface NavItem {
+interface SignedInUser {
+  id: string;
   name: string;
-  href: string;
-  labelKey: Parameters<typeof translate>[1];
-}
-
-type SignedInUser = {
-  id?: string;
-  name?: string;
-  email?: string;
+  email: string;
+  photoURL: string;
   phone?: string;
   dateOfBirth?: string;
   address?: string;
-  photoURL?: string;
   profileCompleted?: boolean;
-  role?: 'user' | 'admin' | string;
-};
-
-const navItems: NavItem[] = [
-  { name: 'Home', href: '/', labelKey: 'nav.home' },
-  { name: 'Features', href: '/features', labelKey: 'nav.features' },
-  // { name: 'Pricing', href: '/pricing', labelKey: 'nav.pricing' },
-  { name: 'Contact', href: '/contact', labelKey: 'nav.contact' },
-  { name: 'About Us', href: '/about-us', labelKey: 'nav.about' },
-  
-];
-
-function isNavItemActive(pathname: string, href: string) {
-  return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+  role?: string;
 }
 
+const navItems = [
+  { name: 'Home', href: '/', labelKey: 'nav.home' as const },
+  { name: 'Features', href: '/#features', labelKey: 'nav.features' as const },
+  { name: 'Contact', href: '/#contact', labelKey: 'nav.contact' as const },
+  { name: 'About Us', href: '/#about', labelKey: 'nav.about' as const },
+];
+
+const isNavItemActive = (pathname: string, href: string) => {
+  if (href === '/') return pathname === '/';
+  if (href.startsWith('/#')) return false;
+  return pathname.startsWith(href);
+};
+
 export default function Header2() {
-  const pathname = usePathname();
   const router = useRouter();
+  const pathname = usePathname();
   const { language } = useLanguage();
-  const isDenseLanguage = language === 'ta';
+
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [signedInUser, setSignedInUser] = useState<SignedInUser | null>(null);
   const [roleChecked, setRoleChecked] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [dashboardSwitchingTo, setDashboardSwitchingTo] = useState('');
-
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isDenseLanguage = false;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -98,7 +91,7 @@ export default function Header2() {
 
       setSignedInUser({
         ...(storedUser || {}),
-        id: storedUser?.id || firebaseUser?.uid,
+        id: storedUser?.id || firebaseUser?.uid || '',
         name: storedUser?.name || firebaseUser?.displayName || '',
         email: storedUser?.email || firebaseUser?.email || '',
         photoURL: storedUser?.photoURL || firebaseUser?.photoURL || '',
@@ -351,7 +344,7 @@ export default function Header2() {
                           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         />
                       )}
-                      <span className="relative z-10">{translate(language, item.labelKey)}</span>
+                      <span className="relative z-10">{translate(language, item.labelKey as any)}</span>
                     </Link>
                   </motion.div>
                 );
@@ -393,13 +386,6 @@ export default function Header2() {
                   </select>
                 </div>
               )}
-
-              {/* <Link
-                to="/login"
-                className="text-foreground/80 hover:text-foreground px-4 py-2 text-sm font-medium transition-colors duration-200"
-              >
-                Sign Indfgdg
-              </Link> */}
 
               {signedInUser ? (
                 <div className="group relative">
@@ -523,7 +509,7 @@ export default function Header2() {
                           }`}
                           onClick={() => setIsMobileMenuOpen(false)}
                         >
-                          {translate(language, item.labelKey)}
+                          {translate(language, item.labelKey as any)}
                         </Link>
                       </motion.div>
                     );
@@ -534,13 +520,6 @@ export default function Header2() {
                   className="border-border space-y-3 border-t pt-6"
                   variants={mobileItemVariants}
                 >
-                  {/* <Link
-                    to="/login"
-                    className="text-foreground hover:bg-muted block w-full rounded-lg py-3 text-center font-medium transition-colors duration-200"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Sign In
-                  </Link> */}
                   {signedInUser ? (
                     <div className="space-y-3">
                       <LanguageSelector />
