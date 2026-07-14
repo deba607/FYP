@@ -31,7 +31,13 @@ class MuseumAssistant:
         self.last_error = None
 
         # Create ChatterBot instance with minimal dependencies
-        self.chatbot = self._create_chatbot()
+        # Wrapped in try/except so a SQLite/filesystem failure on Render does not
+        # crash the entire MuseumAssistant — Firestore handles responses instead.
+        try:
+            self.chatbot = self._create_chatbot()
+        except Exception as cb_err:
+            logger.warning("ChatterBot initialization failed (non-fatal); falling back to Firestore-first mode: %s", cb_err)
+            self.chatbot = None
         
         # Museum data must come from Firestore at request time, not trained ChatterBot data.
         self.museums_data = []
@@ -48,19 +54,23 @@ class MuseumAssistant:
     def _create_chatbot(self, db_path: Path = None) -> ChatBot:
         path = db_path or self.db_path
         db_uri = f"sqlite:///{path.as_posix()}"
-        return ChatBot(
-            'MuseumBot',
-            storage_adapter='chatterbot.storage.SQLStorageAdapter',
-            database_uri=db_uri,
-            logic_adapters=[
-                {
-                    'import_path': 'chatterbot.logic.BestMatch',
-                    'default_response': 'I am here to help you with museum information and ticket bookings. Could you please rephrase your question?',
-                    'maximum_similarity_threshold': 0.70
-                }
-            ],
-            read_only=True  # Prevent writing after training
-        )
+        try:
+            return ChatBot(
+                'MuseumBot',
+                storage_adapter='chatterbot.storage.SQLStorageAdapter',
+                database_uri=db_uri,
+                logic_adapters=[
+                    {
+                        'import_path': 'chatterbot.logic.BestMatch',
+                        'default_response': 'I am here to help you with museum information and ticket bookings. Could you please rephrase your question?',
+                        'maximum_similarity_threshold': 0.70
+                    }
+                ],
+                read_only=True  # Prevent writing after training
+            )
+        except Exception as err:
+            logger.warning("ChatterBot SQLite setup failed on this platform (non-fatal): %s", err)
+            return None
 
     def _is_database_corruption_error(self, err: Exception) -> bool:
         error_text = str(err).lower()
@@ -1123,9 +1133,12 @@ class MuseumAssistant:
             else:
                 return {"message": "There is no booking ready to confirm. Would you like to start a booking?", "intent": "payment", "booking_data": session.get("booking_data", {})}
         
-        # Use ChatterBot for general queries
-        response = str(self.chatbot.get_response(message))
-        
+        # Use ChatterBot for general queries if available
+        if self.chatbot is not None:
+            response = str(self.chatbot.get_response(message))
+        else:
+            response = "I'm here to help with museum information and ticket bookings. Could you please rephrase your question?"
+
         return {
             "message": response,
             "intent": intent,
