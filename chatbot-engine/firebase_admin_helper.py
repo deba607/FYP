@@ -32,6 +32,7 @@ def init_firebase_admin():
             'project_id': project_id,
             'private_key': private_key,
             'client_email': client_email,
+            'token_uri': 'https://oauth2.googleapis.com/token',
         }
 
         cred = credentials.Certificate(cred_dict)
