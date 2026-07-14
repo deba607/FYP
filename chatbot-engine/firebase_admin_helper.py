@@ -20,6 +20,15 @@ def init_firebase_admin():
         private_key = os.environ.get('FIREBASE_PRIVATE_KEY')
         database_url = os.environ.get('FIREBASE_DATABASE_URL') or os.environ.get('NEXT_PUBLIC_FIREBASE_DATABASE_URL')
 
+        if project_id:
+            project_id = project_id.strip().strip('"').strip("'")
+        if client_email:
+            client_email = client_email.strip().strip('"').strip("'")
+        if private_key:
+            private_key = private_key.strip().strip('"').strip("'")
+        if database_url:
+            database_url = database_url.strip().strip('"').strip("'")
+
         if not (project_id and client_email and private_key):
             logger.debug('Firebase admin env vars missing; skipping Firebase admin init')
             return False
