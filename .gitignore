@@ -2,6 +2,7 @@
 node_modules/
 client/node_modules/
 client/firebase-service-account*.json
+client/bharat-museum-tickets-firebase-adminsdk-fbsvc-5e3e099403.json
 
 # Python environments and caches
 .venv/

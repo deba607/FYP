@@ -35,9 +35,9 @@ export type CreateBookingInput = {
   name: string;
   email: string;
   phone: string;
-  gender?: string;
-  age?: number;
-  userLocation?: string;
+  gender?: string | null;
+  age?: number | null;
+  userLocation?: string | null;
   visitDate: string;
   timeSlot: string;
   numberOfTickets: number;
@@ -189,7 +189,8 @@ export type ChatAction =
   | { type: 'virtual_guide'; museumId: string; initialView?: 'overview' | 'videos' | 'gallery' | 'history' }
   | { type: 'quiz_categories' }
   | { type: 'quiz_question'; options: string[]; question_id?: string }
-  | { type: 'quiz_result'; score: string; badgeTitle?: string; badgeImage?: string };
+  | { type: 'quiz_result'; score: string; badgeTitle?: string; badgeImage?: string }
+  | { type: 'book_museum'; museumName?: string };
 
 export async function sendChatMessage(
   message: string,
