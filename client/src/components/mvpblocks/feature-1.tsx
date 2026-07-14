@@ -15,6 +15,8 @@ import {
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useLanguage } from '../../hooks/use-language';
+import { getSiteTranslation } from '../../lib/site-translations';
 
 const features = [
   {
@@ -79,16 +81,19 @@ const features = [
   },
 ];
 export default function Feature1() {
+  const { language } = useLanguage();
+  const t = (text: string) => getSiteTranslation(language, text);
+
   return (
     <section className="relative py-14">
       <div className="mx-auto max-w-screen-xl px-4 md:px-8">
         <div className="relative mx-auto max-w-2xl sm:text-center">
           <div className="relative z-10">
             <h3 className="font-geist mt-4 text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">
-              Key Features of Bharat Museum
+              {t('Key Features of Bharat Museum')}
             </h3>
             <p className="font-geist text-foreground/60 mt-3">
-              Discover our innovative features designed to enhance your museum experience with cutting-edge technology and personalized services.
+              {t('Discover our innovative features designed to enhance your museum experience with cutting-edge technology and personalized services.')}
             </p>
           </div>
           <div
@@ -111,12 +116,12 @@ export default function Feature1() {
                   {item.icon}
                 </div>
                 <h4 className="font-geist text-lg font-bold tracking-tighter">
-                  {item.title}
+                  {t(item.title)}
                 </h4>
-                <p className="text-gray-500">{item.desc}</p>
+                <p className="text-gray-500">{t(item.desc)}</p>
                 {item.title === 'Personalized Experience' ? (
                   <Link href="/personalized" className="inline-flex text-sm font-semibold text-primary underline underline-offset-4">
-                    Open your personalized dashboard
+                    {t('Open your personalized dashboard')}
                   </Link>
                 ) : null}
               </li>

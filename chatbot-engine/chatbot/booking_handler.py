@@ -18,7 +18,7 @@ PRICES = {
 class BookingHandler:
     def __init__(self):
         self.required_fields = ["date", "time_slot", "tickets", "visitor_type"]
-        self.time_slots = ["10:00 AM", "12:00 PM", "2:00 PM", "4:00 PM"]
+        self.time_slots = ['Morning (9 AM-12 PM)', 'Afternoon (12 PM-3 PM)', 'Evening (3 PM-6 PM)']
         self.visitor_types = VISITOR_TYPES
         self.prices = PRICES
 
@@ -31,7 +31,7 @@ class BookingHandler:
             if date:
                 booking_data["date"] = date
                 return {
-                    "message": f"Great! I've noted {date} as your visit date. 📅\n\nWhich time slot would you prefer?\n1. 10:00 AM\n2. 12:00 PM\n3. 2:00 PM\n4. 4:00 PM",
+                    "message": f"Great! I've noted {date} as your visit date. 📅\n\nWhich time slot would you prefer?\n1. Morning (9 AM-12 PM)\n2. Afternoon (12 PM-3 PM)\n3. Evening (3 PM-6 PM)",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -71,7 +71,7 @@ class BookingHandler:
                 }
             else:
                 return {
-                    "message": "Which time slot works best for you?\n1. 10:00 AM\n2. 12:00 PM\n3. 2:00 PM\n4. 4:00 PM",
+                    "message": "Which time slot works best for you?\n1. Morning (9 AM-12 PM)\n2. Afternoon (12 PM-3 PM)\n3. Evening (3 PM-6 PM)",
                     "booking_data": booking_data,
                     "complete": False
                 }
@@ -358,22 +358,24 @@ class BookingHandler:
 
     def extract_time_slot(self, text: str) -> str:
         text_lower = text.lower()
-        # Check for specific time mentions
-        if "10" in text and ("am" in text_lower or "morning" in text_lower):
-            return "10:00 AM"
-        elif "12" in text and ("pm" in text_lower or "noon" in text_lower or "afternoon" in text_lower):
-            return "12:00 PM"
-        elif "2" in text and ("pm" in text_lower or "afternoon" in text_lower):
-            return "2:00 PM"
-        elif "4" in text and ("pm" in text_lower or "evening" in text_lower):
-            return "4:00 PM"
-        # General time periods
-        elif "morning" in text_lower or "9" in text or "11" in text:
-            return "10:00 AM"
-        elif "afternoon" in text_lower or "1" in text or "3" in text:
-            return "2:00 PM"
-        elif "evening" in text_lower or "5" in text or "6" in text:
-            return "4:00 PM"
+        # Check for specific time slot mentions or index selection
+        if "morning" in text_lower or "9" in text_lower or "10" in text_lower or "11" in text_lower:
+            return "Morning (9 AM-12 PM)"
+        elif "afternoon" in text_lower or "12" in text_lower or "1" in text_lower or "2" in text_lower:
+            return "Afternoon (12 PM-3 PM)"
+        elif "evening" in text_lower or "3" in text_lower or "4" in text_lower or "5" in text_lower or "6" in text_lower:
+            return "Evening (3 PM-6 PM)"
+        
+        # Check if they entered a number 1, 2, or 3
+        numbers = re.findall(r'\d+', text)
+        if numbers:
+            num = int(numbers[0])
+            if num == 1:
+                return "Morning (9 AM-12 PM)"
+            elif num == 2:
+                return "Afternoon (12 PM-3 PM)"
+            elif num == 3:
+                return "Evening (3 PM-6 PM)"
         return None
 
     def extract_number(self, text: str) -> int:

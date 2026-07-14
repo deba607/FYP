@@ -836,13 +836,50 @@ class MuseumAssistant:
                 }
             }
 
+        # Check if we're in booking flow or starting one
+        if intent in ["book_ticket", "check_availability"] or session.get("in_booking_flow"):
+            if not is_logged_in:
+                return self.auth_required_response(intent)
+            session["in_booking_flow"] = True
+            
+            if not session.get("booking_data"):
+                session["booking_data"] = {}
+
+            museum_prompt = self.ensure_booking_museum_details(session, message, language)
+            if museum_prompt:
+                return museum_prompt
+            
+            booking_response = self.booking_handler.handle(
+                message, 
+                session["booking_data"]
+            )
+            
+            if booking_response.get("complete"):
+                # Booking data is complete
+                session["in_booking_flow"] = False
+                response = f"{booking_response['message']}\n\n{self.format_booking_summary(session['booking_data'])}\n\nWould you like to confirm this booking?"
+                session["booking_data"]["ready_to_confirm"] = True
+            else:
+                response = booking_response["message"]
+                session["booking_data"] = booking_response.get("booking_data", {})
+                
+            return {
+                "message": response,
+                "intent": intent,
+                "booking_data": session.get("booking_data", {})
+            }
+
         if intent in ["museum_info", "pricing", "discount"]:
             museum = self.extract_museum_from_text(message)
             if museum:
                 return {
                     "message": self.format_museum_details_response(museum),
                     "intent": "museum_info",
-                    "booking_data": session.get("booking_data", {})
+                    "booking_data": session.get("booking_data", {}),
+                    "action": {
+                        "type": "book_museum",
+                        "museumName": museum.get("name")
+                    }
                 }
 
         if intent == "general":
@@ -851,7 +888,11 @@ class MuseumAssistant:
                 return {
                     "message": self.format_museum_details_response(museum),
                     "intent": "museum_info",
-                    "booking_data": session.get("booking_data", {})
+                    "booking_data": session.get("booking_data", {}),
+                    "action": {
+                        "type": "book_museum",
+                        "museumName": museum.get("name")
+                    }
                 }
 
         # --- Search Museums flow ---
@@ -1042,7 +1083,11 @@ class MuseumAssistant:
                     "numberOfTickets": int(booking.get("tickets") or booking.get("numberOfTickets") or 1),
                     "visitorType": booking.get("primary_visitor_type") or booking.get("visitor_type") or booking.get("visitorType") or "Adult",
                     "museumName": booking.get("museumName") or booking.get("museum_name") or None,
-                    "museumLocation": booking.get("museumLocation") or booking.get("museum_location") or None
+                    "museumLocation": booking.get("museumLocation") or booking.get("museum_location") or None,
+                    "gender": booking.get("gender"),
+                    "age": int(booking.get("age")) if booking.get("age") else None,
+                    "userLocation": booking.get("userLocation"),
+                    "visitorCombo": booking.get("visitor_combo") or {}
                 }
 
                 headers = {"Content-Type": "application/json"}
@@ -1078,35 +1123,8 @@ class MuseumAssistant:
             else:
                 return {"message": "There is no booking ready to confirm. Would you like to start a booking?", "intent": "payment", "booking_data": session.get("booking_data", {})}
         
-        # Check if we're in booking flow or starting one
-        if intent in ["book_ticket", "check_availability"] or session["in_booking_flow"]:
-            if not is_logged_in:
-                return self.auth_required_response(intent)
-            session["in_booking_flow"] = True
-            
-            if not session.get("booking_data"):
-                session["booking_data"] = {}
-
-            museum_prompt = self.ensure_booking_museum_details(session, message, language)
-            if museum_prompt:
-                return museum_prompt
-            
-            booking_response = self.booking_handler.handle(
-                message, 
-                session["booking_data"]
-            )
-            
-            if booking_response.get("complete"):
-                # Booking data is complete
-                session["in_booking_flow"] = False
-                response = f"{booking_response['message']}\n\n{self.format_booking_summary(session['booking_data'])}\n\nWould you like to confirm this booking?"
-                session["booking_data"]["ready_to_confirm"] = True
-            else:
-                response = booking_response["message"]
-                session["booking_data"] = booking_response.get("booking_data", {})
-        else:
-            # Use ChatterBot for general queries
-            response = str(self.chatbot.get_response(message))
+        # Use ChatterBot for general queries
+        response = str(self.chatbot.get_response(message))
         
         return {
             "message": response,
@@ -1126,6 +1144,12 @@ class MuseumAssistant:
             summary += f"🕐 Time: {booking_data['time_slot']}\n"
         if booking_data.get("tickets"):
             summary += f"🎫 Tickets: {booking_data['tickets']}\n"
+        if booking_data.get("gender"):
+            summary += f"👤 Gender: {booking_data['gender']}\n"
+        if booking_data.get("age"):
+            summary += f"🎂 Age: {booking_data['age']}\n"
+        if booking_data.get("userLocation"):
+            summary += f"📍 Location: {booking_data['userLocation']}\n"
 
         # Show visitor combo breakdown if available
         combo = booking_data.get("visitor_combo")
@@ -1225,6 +1249,17 @@ class MuseumAssistant:
         booking_data = session.setdefault("booking_data", {})
         current_museum = booking_data.get("museum_name") or booking_data.get("museumName")
         waiting_for_choice = bool(session.get("waiting_for_booking_museum_choice"))
+        
+        # Check if user entered an index selection (e.g. "1")
+        if waiting_for_choice and session.get("booking_museum_choices"):
+            num = self.booking_handler.extract_number(message)
+            if num and 1 <= num <= len(session["booking_museum_choices"]):
+                selected = session["booking_museum_choices"][num - 1]
+                self.apply_museum_to_booking_data(booking_data, selected)
+                session["waiting_for_booking_museum_choice"] = False
+                session["booking_museum_choices"] = []
+                return None
+
         normalized_message = re.sub(r"[^a-z0-9 ]+", " ", str(message or "").lower())
         normalized_message = re.sub(r"\s+", " ", normalized_message).strip()
         explicitly_mentions_museum = bool(re.search(r"\bmuseums?\b", normalized_message))
@@ -1270,6 +1305,7 @@ class MuseumAssistant:
 
         if len(matches) > 1:
             session["waiting_for_booking_museum_choice"] = True
+            session["booking_museum_choices"] = matches
             return {
                 "message": self.format_booking_museum_choices(matches),
                 "intent": "book_ticket",
@@ -1344,7 +1380,7 @@ class MuseumAssistant:
                 continue
             if normalized_message == name:
                 exact.append(museum)
-            elif name in normalized_message:
+            elif name in normalized_message or normalized_message in name:
                 contained.append(museum)
         if len(exact) == 1:
             return exact[0]

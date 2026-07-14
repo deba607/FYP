@@ -31,9 +31,9 @@ interface SignedInUser {
 
 const navItems = [
   { name: 'Home', href: '/', labelKey: 'nav.home' as const },
-  { name: 'Features', href: '/#features', labelKey: 'nav.features' as const },
-  { name: 'Contact', href: '/#contact', labelKey: 'nav.contact' as const },
-  { name: 'About Us', href: '/#about', labelKey: 'nav.about' as const },
+  { name: 'Features', href: '/features', labelKey: 'nav.features' as const },
+  { name: 'Contact', href: '/contact', labelKey: 'nav.contact' as const },
+  { name: 'About Us', href: '/about-us', labelKey: 'nav.about' as const },
 ];
 
 const isNavItemActive = (pathname: string, href: string) => {

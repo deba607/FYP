@@ -102,6 +102,9 @@ type BookingData = {
   museum_location?: string;
   museum_category?: string;
   museum_id?: string;
+  gender?: string;
+  age?: number;
+  userLocation?: string;
 };
 
 type TicketCard = TicketHistoryItem & {
@@ -1685,7 +1688,8 @@ export default function BookingWithChatBot() {
         virtualGuide: response.action?.type === 'virtual_guide'
           ? { museumId: response.action.museumId, initialView: response.action.initialView }
           : undefined,
-        quizAction
+        quizAction,
+        bookMuseumName: response.action?.type === 'book_museum' ? response.action.museumName : undefined
       };
 
       setMessages((m) => [...m, reply]);
@@ -1946,6 +1950,9 @@ export default function BookingWithChatBot() {
         name: contactDetails.name,
         email: contactDetails.email,
         phone: contactDetails.phone,
+        gender: bookingData.gender || null,
+        age: bookingData.age ? Number(bookingData.age) : null,
+        userLocation: bookingData.userLocation || null,
         visitDate: bookingData.date!,
         timeSlot: toApiTimeSlot(bookingData.time_slot),
         numberOfTickets: Number(bookingData.tickets),
@@ -2513,6 +2520,9 @@ export default function BookingWithChatBot() {
                   <div>{translate(language, 'booking.date')}: {bookingData.date}</div>
                   <div>{translate(language, 'booking.time')}: {bookingData.time_slot}</div>
                   <div>{translate(language, 'booking.ticketCount')}: {bookingData.tickets}</div>
+                  {bookingData.gender && <div>Gender: {bookingData.gender}</div>}
+                  {bookingData.age && <div>Age: {bookingData.age}</div>}
+                  {bookingData.userLocation && <div>Location: {bookingData.userLocation}</div>}
                   {bookingData.visitor_combo && Object.keys(bookingData.visitor_combo).length > 0 ? (
                     <div>
                       <div className="mt-1 font-semibold">{translate(language, 'booking.visitorCategory')}:</div>
